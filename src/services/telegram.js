@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { truncate } from "../utils/format.js";
+const TELEGRAM_LIMIT = 3900;
 
 export function createTelegramService({ token }) {
   async function call(method, payload = {}) {
@@ -15,11 +15,16 @@ export function createTelegramService({ token }) {
   }
 
   async function send(chatId, text) {
-    return call("sendMessage", {
-      chat_id: chatId,
-      text: truncate(text),
-      disable_web_page_preview: true,
-    });
+    const chunks = splitTelegramMessage(String(text || ""));
+    let last = null;
+    for (const chunk of chunks) {
+      last = await call("sendMessage", {
+        chat_id: chatId,
+        text: chunk,
+        disable_web_page_preview: true,
+      });
+    }
+    return last;
   }
 
   async function setWebhook(url) {
@@ -35,6 +40,22 @@ export function createTelegramService({ token }) {
   }
 
   return { call, send, setWebhook, getUpdates };
+}
+
+export function splitTelegramMessage(text, limit = TELEGRAM_LIMIT) {
+  if (text.length <= limit) return [text];
+
+  const chunks = [];
+  let remaining = text;
+  while (remaining.length > limit) {
+    const window = remaining.slice(0, limit);
+    const splitAt = Math.max(window.lastIndexOf("\n\n"), window.lastIndexOf("\n"), window.lastIndexOf(". "));
+    const size = splitAt > limit * 0.55 ? splitAt : limit;
+    chunks.push(remaining.slice(0, size).trim());
+    remaining = remaining.slice(size).trim();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
 }
 
 export function startWebhookServer({ port, telegram, publicUrl, handleUpdate, log = console }) {

@@ -18,6 +18,18 @@ export async function saveGmailAuthCode(code, { env }) {
   const client = await createOAuthClient(env);
   const { tokens } = await client.getToken(extractCode(code));
   client.setCredentials(tokens);
+  if ((env.AGENT_MODE || "local") === "cloud") {
+    return [
+      "Gmail reconnected with read-only access.",
+      "",
+      "Add this Railway variable so Gmail survives redeploys/restarts:",
+      "",
+      "GOOGLE_OAUTH_TOKEN_JSON=",
+      compactJson(tokens),
+      "",
+      "Then redeploy Railway.",
+    ].join("\n");
+  }
   writeToken(tokens, env);
   return "Gmail connected with read-only access.";
 }
@@ -59,7 +71,9 @@ export async function listUnreadEmails({ env, limit = 10 }) {
 
 export async function gmailStatus({ env }) {
   validateGmailEnv(env);
-  return loadGmailToken(env).token ? "Gmail is connected." : missingTokenMessage(env);
+  const { token, source } = loadGmailToken(env);
+  if (!token) return missingTokenMessage(env);
+  return source === "env" ? "Gmail is connected from Railway env." : "Gmail is connected from local token file.";
 }
 
 export function exportGmailToken({ env }) {

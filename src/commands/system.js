@@ -8,6 +8,8 @@ export function helpText(env) {
     "",
     "Personal:",
     "/gmail - latest unread Gmail",
+    "/gmail_status - Gmail connection status",
+    "/gmail_reconnect - reconnect Gmail OAuth",
     "/gmail_auth - get Gmail OAuth link",
     "/gmail_code <code> - finish Gmail OAuth",
     "/gmail_export_token - export token JSON for Railway",

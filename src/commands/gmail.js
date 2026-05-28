@@ -1,8 +1,26 @@
 import { buildEmailDigest } from "../services/emailDigest.js";
-import { exportGmailToken, getGmailAuthUrl, listUnreadEmails, saveGmailAuthCode } from "../services/gmail.js";
+import { exportGmailToken, getGmailAuthUrl, gmailStatus, listUnreadEmails, saveGmailAuthCode } from "../services/gmail.js";
 import { buildMorningDigest } from "../services/morning.js";
 
 export async function handleGmailCommand(text, { env, context }) {
+  if (text.startsWith("/gmail_status")) {
+    return gmailStatus({ env });
+  }
+
+  if (text.startsWith("/gmail_reconnect")) {
+    const url = await getGmailAuthUrl({ env });
+    return [
+      "Gmail reconnect link:",
+      "",
+      url,
+      "",
+      "After approving read-only access, send:",
+      "/gmail_code <code-or-full-url>",
+      "",
+      "In Railway cloud mode, /gmail_code will return GOOGLE_OAUTH_TOKEN_JSON for Railway Variables.",
+    ].join("\n");
+  }
+
   if (text.startsWith("/gmail_auth")) {
     const url = await getGmailAuthUrl({ env });
     return ["Gmail OAuth link:", "", url, "", "After approving access, send:", "/gmail_code <code-or-full-url>"].join("\n");

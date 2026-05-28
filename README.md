@@ -15,6 +15,8 @@ Cloud-safe:
 
 - `/health`
 - `/gmail`
+- `/gmail_status`
+- `/gmail_reconnect`
 - `/gmail_auth`
 - `/gmail_code <code-or-url>`
 - `/gmail_export_token`
@@ -130,6 +132,7 @@ Then test:
 ```text
 /health
 /gmail
+/gmail_status
 /digest
 /market
 /news
@@ -260,6 +263,14 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://localhost:3000/oauth2callback
 GOOGLE_OAUTH_TOKEN_JSON=<copied-json>
 ```
+
+You can also reconnect from Railway:
+
+1. Send `/gmail_reconnect`.
+2. Open the OAuth link and approve read-only Gmail access.
+3. Send `/gmail_code <code-or-full-url>`.
+4. Copy the returned `GOOGLE_OAUTH_TOKEN_JSON` value into Railway Variables.
+5. Redeploy.
 
 Tokens are never logged. The app only logs whether Gmail auth loaded from env, file, or is disabled. `.env`, `.tokens/`, and token JSON files are ignored by git.
 

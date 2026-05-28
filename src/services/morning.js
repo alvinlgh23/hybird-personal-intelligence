@@ -1,5 +1,5 @@
 import { generateDigest } from "../ai/router.js";
-import { inferMarketRegime } from "./marketData.js";
+import { fetchYahooQuote, getQuotes, inferMarketRegime } from "./marketData.js";
 import { buildEmailDigest } from "./emailDigest.js";
 import { getEarningsOverview, formatEarningsOverview } from "./earnings.js";
 import { listUnreadEmails } from "./gmail.js";
@@ -18,26 +18,41 @@ export async function buildMorningDigest({ env }) {
     safeSection("watchlist", () => buildWatchlistBrief(env), "Watchlist\n\nUnavailable."),
     safeSection("news", () => getMarketMovingHeadlines({ env, limit: 6 }), []),
   ]);
+  const structure = await safeSection("market structure", () => getInstitutionalMarketContext(env), emptyStructure());
 
   const snapshot = market.value;
   const headlines = news.value;
-  const fallback = buildFallbackMorning({ snapshot, headlines, gmail, earnings: earnings.value, watchlist: watchlist.value });
+  const fallback = buildFallbackMorning({ snapshot, headlines, gmail, earnings: earnings.value, watchlist: watchlist.value, structure: structure.value });
 
   const prompt = [
-    "Create a professional personal morning intelligence brief for Telegram.",
-    "Use detailed research-note style with short reasoning paragraphs, not shallow labels.",
-    "Start with a section named: Top 3 things that matter today.",
-    "Then use these sections: Executive summary, Macro regime, Liquidity conditions, Market / valuation read, Momentum / chase-risk read, Key catalysts, Key risks, What needs attention, What to watch next, Final interpretation.",
-    "Explain why the market state matters instead of only saying risk-on, risk-off, or mixed.",
-    "Ignore low-relevance headlines unless they clearly affect macro risk, liquidity, policy, supply chains, or major risk assets.",
+    "Write an institutional-grade cross-asset morning intelligence brief for Telegram.",
+    "Voice: hedge-fund morning note / macro desk strategist. Concise, analytical, cause-and-effect driven.",
+    "This is not a news summary. Identify market-driving themes and explain why they matter.",
+    "Use exactly these section headers:",
+    "1. TOP 3 THINGS THAT ACTUALLY MATTER TODAY",
+    "2. MACRO REGIME ANALYSIS",
+    "3. CROSS-ASSET INTERPRETATION",
+    "4. MARKET STRUCTURE ANALYSIS",
+    "5. EARNINGS + MEGA CAP INTELLIGENCE",
+    "6. CRYPTO + LIQUIDITY",
+    "7. POSITIONING + RISK",
+    "8. WHAT TO WATCH NEXT",
+    "9. ACTIONABLE CONCLUSION",
+    "Analyze DXY, US10Y, liquidity backdrop, Nasdaq, breadth proxies, volatility, policy expectations, and whether the rally is healthy or fragile.",
+    "Explain relationships: yields vs growth stocks, DXY vs crypto, oil vs inflation, semiconductors vs AI momentum, liquidity vs speculative assets.",
+    "Discuss narrow leadership, AI concentration risk, momentum crowding, defensive rotation, cyclicals vs growth, and mega-cap/AI earnings implications.",
+    "For crypto, infer speculative appetite and sustainability from BTC/ETH and macro liquidity. Mention stablecoin/ETF flows only if not directly available as unavailable, not invented.",
+    "Do not give direct buy/sell advice. Use scenario-based reasoning and state what could invalidate the current trend.",
+    "Keep each section readable on mobile: 1 short paragraph or 2-4 tight bullets. Total target: 1800-3200 words max.",
     "Do not expose raw errors, stack traces, file paths, secrets, credentials, or tokens.",
-    "Avoid direct buy/sell advice. End with: Not financial advice.",
+    "End with: Not financial advice.",
     "",
     "Input:",
     JSON.stringify(
       {
         market: snapshot,
         marketReasoning: snapshot ? marketReasoning(snapshot) : "Market data unavailable.",
+        structure: structure.value,
         headlines,
         earnings: earnings.value,
         watchlist: watchlist.value,
@@ -48,6 +63,7 @@ export async function buildMorningDigest({ env }) {
           earnings: earnings.ok ? "ok" : earnings.message,
           watchlist: watchlist.ok ? "ok" : watchlist.message,
           news: news.ok ? "ok" : news.message,
+          marketStructure: structure.ok ? "ok" : structure.message,
         },
       },
       null,
@@ -55,7 +71,7 @@ export async function buildMorningDigest({ env }) {
     ),
   ].join("\n");
 
-  return generateDigest(prompt, { env, fallback, maxOutputTokens: 3200 });
+  return generateDigest(prompt, { env, fallback, maxOutputTokens: 5200 });
 }
 
 async function buildGmailSection(env) {
@@ -69,38 +85,50 @@ async function buildGmailSection(env) {
   }
 }
 
-function buildFallbackMorning({ snapshot, headlines, gmail, earnings, watchlist }) {
-  const topThree = topThreeThings({ snapshot, headlines, earnings });
+function buildFallbackMorning({ snapshot, headlines, gmail, earnings, watchlist, structure }) {
+  const topThree = topThreeThings({ snapshot, headlines, earnings, structure });
   const marketBlock = snapshot
-    ? buildMarketStateBlock(snapshot)
+    ? buildMarketStateBlock(snapshot, structure)
     : "Market state\n\nMarket data unavailable. Watch DXY, US10Y, equity breadth, and BTC/ETH follow-through before reading risk appetite.";
 
   return [
-    "Personal Morning Brief",
+    "Institutional Morning Intelligence Brief",
     "",
-    "Top 3 things that matter today",
+    "1. TOP 3 THINGS THAT ACTUALLY MATTER TODAY",
     ...topThree.map((item, index) => `${index + 1}. ${item}`),
     "",
-    "1. What needs my attention",
-    gmail.value,
-    "",
-    "2. Market state",
+    "2. MACRO REGIME ANALYSIS",
     marketBlock,
     "",
-    "3. Earnings / major company events",
-    formatEarningsOverview(earnings),
+    "3. CROSS-ASSET INTERPRETATION",
+    crossAssetFallback(snapshot, structure),
     "",
-    "4. Watchlist",
-    watchlist,
+    "4. MARKET STRUCTURE ANALYSIS",
+    marketStructureFallback(structure),
     "",
-    "5. Market-Moving News",
-    formatMarketMovingHeadlines(headlines),
+    "5. EARNINGS + MEGA CAP INTELLIGENCE",
+    [formatEarningsOverview(earnings), "", "Mega-cap watchlist context", watchlist].join("\n"),
     "",
-    "6. What to watch next",
-    "Watch whether yields and the dollar confirm or contradict equity leadership, whether AI/mega-cap breadth broadens, and whether crypto beta stabilizes rather than fading into strength.",
+    "6. CRYPTO + LIQUIDITY",
+    cryptoLiquidityFallback(snapshot),
     "",
-    "Final interpretation",
-    "This is a cross-asset morning read for prioritization, not a trade instruction. Not financial advice.",
+    "7. POSITIONING + RISK",
+    positioningFallback(snapshot, structure),
+    "",
+    "8. WHAT TO WATCH NEXT",
+    [
+      "Watch CPI/PCE/Fed communication, Treasury auctions, US10Y and DXY confirmation, AI capex commentary, mega-cap earnings revisions, geopolitical risk, and whether crypto beta confirms or rejects easier liquidity.",
+      "",
+      formatMarketMovingHeadlines(headlines),
+      "",
+      "Gmail / personal attention",
+      gmail.value,
+    ].join("\n"),
+    "",
+    "9. ACTIONABLE CONCLUSION",
+    actionableConclusionFallback(snapshot),
+    "",
+    "Not financial advice.",
   ].join("\n\n");
 }
 
@@ -114,14 +142,39 @@ async function safeSection(name, fn, fallback) {
   }
 }
 
-function topThreeThings({ snapshot, headlines, earnings }) {
+async function getInstitutionalMarketContext(env) {
+  const megaCapTickers = ["NVDA", "MSFT", "META", "AMZN", "AAPL", "GOOGL", "TSLA", "PLTR", "AMD", "TSM", "MU", "AVGO", "SNOW"];
+  const [vix, oil, rsp, iwm, soxx, megaCaps] = await Promise.all([
+    fetchYahooQuote("%5EVIX", "VIX"),
+    fetchYahooQuote("CL=F", "WTI crude"),
+    fetchYahooQuote("RSP", "S&P 500 equal weight"),
+    fetchYahooQuote("IWM", "Russell 2000"),
+    fetchYahooQuote("SOXX", "Semiconductors"),
+    getQuotes(megaCapTickers),
+  ]);
+
+  return {
+    volatility: vix,
+    oil,
+    breadthProxies: { equalWeightSp500: rsp, russell2000: iwm },
+    semiconductors: soxx,
+    megaCaps: megaCaps.filter(Boolean),
+    stablecoinFlows: "not available from configured data sources",
+    cryptoEtfFlows: "not available from configured data sources",
+    policyExpectations: "infer from DXY, US10Y, equities, and volatility; no Fed funds futures feed configured",
+  };
+}
+
+function topThreeThings({ snapshot, headlines, earnings, structure }) {
   const regime = snapshot ? inferMarketRegime(snapshot) : null;
   const firstHeadline = headlines?.[0]?.title;
   const firstEarnings = earnings?.reportingToday?.[0] || earnings?.upcoming?.[0];
+  const semis = structure?.semiconductors;
+  const breadth = structure?.breadthProxies?.equalWeightSp500;
   return [
-    regime ? `${marketSentence(regime)} The key confirmation points are DXY, US10Y, equity breadth, and BTC/ETH beta.` : "Market data is unavailable, so prioritize confirmation from rates, dollar, breadth, and major index futures.",
-    firstHeadline ? `Headline risk to track: ${firstHeadline}` : "No high-signal market-moving headline is available yet; avoid over-reading low-relevance news.",
-    firstEarnings ? `Earnings focus: ${firstEarnings.ticker} around ${firstEarnings.earningsDate || "date n/a"}; watch guidance and reaction more than the headline print.` : "No tracked mega-cap earnings event is flagged for today, so macro and breadth likely matter more.",
+    regime ? `${marketSentence(regime)} What matters is whether lower yields/dollar pressure broaden participation beyond the same AI leaders, or simply invite another chase into crowded duration risk.` : "Market data is unavailable, so the first priority is confirming rates, dollar, breadth, and volatility before trusting index moves.",
+    semis ? `AI infrastructure remains the market's swing factor: semiconductors are ${formatQuote(semis)}, while equal-weight breadth is ${formatQuote(breadth)}. That spread helps separate healthy participation from narrow AI-led index strength.` : "AI/semiconductor leadership is still the main market-structure variable; without breadth confirmation, index strength can be fragile.",
+    firstHeadline ? `Headline risk to track: ${firstHeadline}. The question is whether it changes liquidity, earnings revisions, AI capex expectations, or policy risk.` : firstEarnings ? `Earnings focus: ${firstEarnings.ticker} around ${firstEarnings.earningsDate || "date n/a"}; guidance and reaction matter more than the headline print.` : "No single scheduled catalyst dominates yet, so the session likely trades on macro confirmation, AI leadership, and positioning.",
   ];
 }
 
@@ -135,7 +188,8 @@ function marketReasoning(snapshot) {
   ].join(" ");
 }
 
-function buildMarketStateBlock(snapshot) {
+function buildMarketStateBlock(snapshot, structure) {
+  const regime = inferMarketRegime(snapshot);
   return [
     "Cross-Asset Snapshot",
     "",
@@ -145,10 +199,86 @@ function buildMarketStateBlock(snapshot) {
     `Nasdaq: ${formatQuote(snapshot.macro.nasdaq)}`,
     `DXY: ${formatQuote(snapshot.macro.dxy)}`,
     `US10Y: ${formatYield(snapshot.macro.us10y)}`,
+    `VIX: ${formatQuote(structure?.volatility)}`,
+    `WTI crude: ${formatQuote(structure?.oil)}`,
+    `Equal-weight S&P proxy: ${formatQuote(structure?.breadthProxies?.equalWeightSp500)}`,
+    `Russell 2000 proxy: ${formatQuote(structure?.breadthProxies?.russell2000)}`,
     "",
-    "Reasoning",
-    marketReasoning(snapshot),
+    "Regime read",
+    `${marketReasoning(snapshot)} Current conditions look ${regime.macroPolicy} from a policy/liquidity lens. A healthy rally would show easing yields, softer dollar pressure, stable volatility, and improving breadth; a fragile rally would rely mainly on Nasdaq/AI momentum while cyclicals, small caps, or crypto fail to confirm.`,
   ].join("\n");
+}
+
+function crossAssetFallback(snapshot, structure) {
+  if (!snapshot) return "Cross-asset data unavailable. The main relationships to monitor are yields versus growth stocks, DXY versus crypto, oil versus inflation expectations, and semiconductors versus AI momentum.";
+  return [
+    `Yields vs growth: US10Y at ${formatYield(snapshot.macro.us10y)} is the pressure point for long-duration equities. Falling yields can support Nasdaq multiples; a yield reversal would challenge the rally.`,
+    `DXY vs crypto: DXY at ${formatQuote(snapshot.macro.dxy)} matters because a softer dollar usually helps liquidity-sensitive assets, while a dollar rebound can drain speculative appetite.`,
+    `Oil vs inflation: WTI at ${formatQuote(structure?.oil)} is relevant because an oil spike can reprice inflation risk and reduce Fed easing confidence.`,
+    `Semis vs AI: SOXX at ${formatQuote(structure?.semiconductors)} is the cleanest proxy for whether AI infrastructure momentum is still leading or starting to fatigue.`,
+  ].join("\n");
+}
+
+function marketStructureFallback(structure) {
+  const megaCaps = structure?.megaCaps || [];
+  const leaders = megaCaps
+    .filter((item) => Number.isFinite(item.changePct))
+    .sort((a, b) => b.changePct - a.changePct)
+    .slice(0, 4)
+    .map((item) => `${item.symbol}: ${formatPct(item.changePct)}`)
+    .join(", ");
+  const laggards = megaCaps
+    .filter((item) => Number.isFinite(item.changePct))
+    .sort((a, b) => a.changePct - b.changePct)
+    .slice(0, 3)
+    .map((item) => `${item.symbol}: ${formatPct(item.changePct)}`)
+    .join(", ");
+
+  return [
+    `Breadth check: equal-weight S&P is ${formatQuote(structure?.breadthProxies?.equalWeightSp500)} and Russell 2000 is ${formatQuote(structure?.breadthProxies?.russell2000)}. If these lag while Nasdaq rises, leadership is narrow and more dependent on mega-cap duration.`,
+    `AI concentration: semiconductor proxy ${formatQuote(structure?.semiconductors)}. Persistent semi leadership supports the AI capex narrative; fading semis while indexes hold up raises concentration risk.`,
+    leaders ? `Mega-cap leaders today: ${leaders}.` : "Mega-cap leadership data unavailable.",
+    laggards ? `Mega-cap laggards today: ${laggards}.` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function cryptoLiquidityFallback(snapshot) {
+  if (!snapshot) return "Crypto data unavailable. Watch BTC/ETH against DXY and US10Y for liquidity confirmation.";
+  return [
+    `BTC is ${formatAsset(snapshot.crypto.btc)} and ETH is ${formatAsset(snapshot.crypto.eth)}. The signal is less about the absolute move and more about whether crypto confirms the equity/liquidity backdrop.`,
+    `With DXY at ${formatQuote(snapshot.macro.dxy)} and US10Y at ${formatYield(snapshot.macro.us10y)}, sustainable crypto strength would require dollar/yield pressure to stay contained.`,
+    "Stablecoin and ETF flow feeds are not configured, so institutional participation cannot be confirmed directly from this bot yet.",
+  ].join("\n");
+}
+
+function positioningFallback(snapshot, structure) {
+  const regime = snapshot ? inferMarketRegime(snapshot) : null;
+  return [
+    regime ? `Positioning risk: ${regime.risks.join("; ")}.` : "Positioning risk is unclear without market data.",
+    `Crowding watch: if Nasdaq/semis outperform while equal-weight and Russell proxies lag, the rally is more vulnerable to AI de-risking and momentum unwind.`,
+    `Volatility watch: VIX at ${formatQuote(structure?.volatility)}. Low or falling volatility can support carry and chase behavior, but it also masks gap risk if rates or dollar reverse.`,
+  ].join("\n");
+}
+
+function actionableConclusionFallback(snapshot) {
+  if (!snapshot) return "Current posture: neutral until market data confirms. What matters most next is rates, dollar, breadth, and AI leadership. The trend is invalidated if volatility jumps and liquidity-sensitive assets fail together.";
+  const regime = inferMarketRegime(snapshot);
+  return `Current posture: ${regime.riskTone}, but confirmation matters more than the label. The most important next signal is whether easier liquidity broadens beyond AI/mega-cap leadership. The current trend would be invalidated by a dollar/yield reversal, rising volatility, weak breadth, or crypto failing to confirm speculative appetite.`;
+}
+
+function emptyStructure() {
+  return {
+    volatility: null,
+    oil: null,
+    breadthProxies: { equalWeightSp500: null, russell2000: null },
+    semiconductors: null,
+    megaCaps: [],
+    stablecoinFlows: "not available",
+    cryptoEtfFlows: "not available",
+    policyExpectations: "not available",
+  };
 }
 
 function marketSentence(regime) {
