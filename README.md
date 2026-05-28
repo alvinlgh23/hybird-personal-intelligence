@@ -81,7 +81,7 @@ OPENAI_MODEL=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://localhost:3000/oauth2callback
-GOOGLE_OAUTH_TOKEN_JSON=
+GMAIL_TOKEN_JSON=
 
 DAILY_DIGEST_ENABLED=true
 DAILY_DIGEST_TIME=08:00
@@ -119,7 +119,7 @@ OPENAI_MODEL=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://localhost:3000/oauth2callback
-GMAIL_TOKEN_PATH=.tokens/gmail-token.json
+GMAIL_TOKEN_JSON=
 ALLOW_TOKEN_EXPORT=false
 
 MODEL_RUNNER_MODE=local
@@ -237,18 +237,17 @@ Google Cloud setup:
 
 ## Railway Gmail Setup
 
-Railway cannot read your Mac's `.tokens/gmail-token.json`, so cloud Gmail uses `GOOGLE_OAUTH_TOKEN_JSON`.
+Railway containers are stateless, so Gmail uses `GMAIL_TOKEN_JSON` from environment variables instead of `gmail-token.json`.
 
 Token loading priority:
 
-1. `GOOGLE_OAUTH_TOKEN_JSON` environment variable.
-2. Local `GMAIL_TOKEN_PATH` file for Mac development.
-3. Gmail disabled gracefully.
+1. `GMAIL_TOKEN_JSON` environment variable.
+2. Gmail disabled gracefully with a friendly Telegram message.
 
 If Gmail is disabled in cloud mode, `/morning` and `/digest` show:
 
 ```text
-Gmail not connected in cloud. Run /gmail_auth or configure GOOGLE_OAUTH_TOKEN_JSON.
+Gmail not connected in cloud. Run /gmail_auth or configure GMAIL_TOKEN_JSON.
 ```
 
 To create the Railway token JSON, first make Gmail work locally, then:
@@ -269,7 +268,7 @@ To create the Railway token JSON, first make Gmail work locally, then:
 4. Copy the compact JSON into Railway variable:
 
    ```env
-   GOOGLE_OAUTH_TOKEN_JSON=<copied-json>
+   GMAIL_TOKEN_JSON=<copied-json>
    ```
 
 5. Set `ALLOW_TOKEN_EXPORT=false` locally and restart.
@@ -280,7 +279,7 @@ Add these Railway variables for Gmail:
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://localhost:3000/oauth2callback
-GOOGLE_OAUTH_TOKEN_JSON=<copied-json>
+GMAIL_TOKEN_JSON=<copied-json>
 ```
 
 You can also reconnect from Railway:
@@ -288,10 +287,10 @@ You can also reconnect from Railway:
 1. Send `/gmail_reconnect`.
 2. Open the OAuth link and approve read-only Gmail access.
 3. Send `/gmail_code <code-or-full-url>`.
-4. Copy the returned `GOOGLE_OAUTH_TOKEN_JSON` value into Railway Variables.
+4. Copy the returned `GMAIL_TOKEN_JSON` value into Railway Variables.
 5. Redeploy.
 
-Tokens are never logged. The app only logs whether Gmail auth loaded from env, file, or is disabled. `.env`, `.tokens/`, and token JSON files are ignored by git.
+When `/gmail_code` succeeds, the app prints `GMAIL_TOKEN_JSON=...` to the Railway/local console and returns it in Telegram so you can copy it into Railway Variables. Do not share deployment logs from that run. `.env`, `.tokens/`, and token JSON files are ignored by git.
 
 ## Valuation Model Integration
 
@@ -352,7 +351,7 @@ Optional:
 - `OPENAI_API_KEY`
 - `GEMINI_MODEL` (defaults to `gemini-2.5-flash`)
 - `OPENAI_MODEL`
-- `GOOGLE_OAUTH_TOKEN_JSON` for Gmail in Railway
+- `GMAIL_TOKEN_JSON` for Gmail in Railway
 - `MODEL_RUNNER_MODE=cloud` and `VALUATION_MODEL_PATH=models/valuation/runner.py` for `/deepbrief` model intelligence
 
 ```env
@@ -368,7 +367,7 @@ OPENAI_MODEL=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://localhost:3000/oauth2callback
-GOOGLE_OAUTH_TOKEN_JSON=
+GMAIL_TOKEN_JSON=
 MODEL_RUNNER_MODE=cloud
 VALUATION_MODEL_PATH=models/valuation/runner.py
 PYTHON_BIN=python3
@@ -410,7 +409,7 @@ Limitations:
 
 - Telegram allowlist applies to every command except `/whoami`.
 - Cloud mode disables `/ask_codex` and `/chrome`.
-- Tokens are never printed to logs.
+- Gmail OAuth token JSON is printed only during `/gmail_code` or `/gmail_export_token` so you can copy it to Railway Variables.
 - Gmail is read-only.
 - No arbitrary shell execution from Telegram.
 - Financial responses use interpretation language, not personalized buy/sell advice.

@@ -17,7 +17,7 @@ export async function handleGmailCommand(text, { env, context }) {
       "After approving read-only access, send:",
       "/gmail_code <code-or-full-url>",
       "",
-      "In Railway cloud mode, /gmail_code will return GOOGLE_OAUTH_TOKEN_JSON for Railway Variables.",
+      "In Railway cloud mode, /gmail_code will return GMAIL_TOKEN_JSON for Railway Variables.",
     ].join("\n");
   }
 

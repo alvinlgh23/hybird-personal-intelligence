@@ -8,7 +8,7 @@ import { formatMarketMovingHeadlines, getMarketMovingHeadlines } from "./news.js
 import { runValuation, valuationAvailable } from "./valuation.js";
 import { buildWatchlistBrief } from "./watchlist.js";
 
-const CLOUD_GMAIL_MESSAGE = "Gmail not connected in cloud. Run /gmail_auth or configure GOOGLE_OAUTH_TOKEN_JSON.";
+const CLOUD_GMAIL_MESSAGE = "Gmail not connected in cloud. Run /gmail_auth or configure GMAIL_TOKEN_JSON.";
 const FOCUS_TICKERS = ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META", "TSLA", "PLTR", "MU", "TSM", "AMD", "AVGO", "CRM", "SNOW", "COST", "DELL"];
 
 export async function buildMorningDigest({ env }) {

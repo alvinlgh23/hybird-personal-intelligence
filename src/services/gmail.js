@@ -1,9 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { compactJson, safeJsonParse } from "../utils/safeJson.js";
+import { compactJson } from "../utils/safeJson.js";
 
 const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
-const DEFAULT_TOKEN_PATH = ".tokens/gmail-token.json";
 
 export async function getGmailAuthUrl({ env }) {
   const client = await createOAuthClient(env);
@@ -18,20 +15,17 @@ export async function saveGmailAuthCode(code, { env }) {
   const client = await createOAuthClient(env);
   const { tokens } = await client.getToken(extractCode(code));
   client.setCredentials(tokens);
-  if ((env.AGENT_MODE || "local") === "cloud") {
-    return [
-      "Gmail reconnected with read-only access.",
-      "",
-      "Add this Railway variable so Gmail survives redeploys/restarts:",
-      "",
-      "GOOGLE_OAUTH_TOKEN_JSON=",
-      compactJson(tokens),
-      "",
-      "Then redeploy Railway.",
-    ].join("\n");
-  }
-  writeToken(tokens, env);
-  return "Gmail connected with read-only access.";
+  console.log(`GMAIL_TOKEN_JSON=${compactJson(tokens)}`);
+  return [
+    "Gmail connected with read-only access.",
+    "",
+    "Add this variable to Railway so Gmail survives restarts/redeploys:",
+    "",
+    "GMAIL_TOKEN_JSON=",
+    compactJson(tokens),
+    "",
+    "Then redeploy Railway.",
+  ].join("\n");
 }
 
 export async function listUnreadEmails({ env, limit = 10 }) {
@@ -71,32 +65,32 @@ export async function listUnreadEmails({ env, limit = 10 }) {
 
 export async function gmailStatus({ env }) {
   validateGmailEnv(env);
-  const { token, source } = loadGmailToken(env);
+  const { token, source, error } = loadGmailToken(env);
+  if (error) return error;
   if (!token) return missingTokenMessage(env);
-  return source === "env" ? "Gmail is connected from Railway env." : "Gmail is connected from local token file.";
+  return source === "env" ? "Gmail is connected from GMAIL_TOKEN_JSON." : "Gmail is connected.";
 }
 
 export function exportGmailToken({ env }) {
   if (env.ALLOW_TOKEN_EXPORT !== "true") {
     return "Token export is disabled. Set ALLOW_TOKEN_EXPORT=true locally, restart, run /gmail_export_token, then turn it off again.";
   }
-  const { token } = loadGmailToken(env);
-  if (!token) return "No Gmail token found. Run /gmail_auth first.";
-  return ["GOOGLE_OAUTH_TOKEN_JSON for Railway Variables:", "", compactJson(token), "", "Turn ALLOW_TOKEN_EXPORT=false after copying."].join("\n");
+  const { token, error } = loadGmailToken(env);
+  if (error) return error;
+  if (!token) return "No Gmail token found. Run /gmail_auth first, then copy GMAIL_TOKEN_JSON into Railway Variables.";
+  return ["GMAIL_TOKEN_JSON for Railway Variables:", "", compactJson(token), "", "Turn ALLOW_TOKEN_EXPORT=false after copying."].join("\n");
 }
 
 async function authorizedClient(env) {
   const client = await createOAuthClient(env);
-  const { token, source } = loadGmailToken(env);
+  const { token, error } = loadGmailToken(env);
+  if (error) {
+    throw new Error(error);
+  }
   if (!token) {
     throw new Error(missingTokenMessage(env));
   }
   client.setCredentials(token);
-  client.on("tokens", (tokens) => {
-    if (source !== "env" && (tokens.refresh_token || tokens.access_token)) {
-      writeToken({ ...client.credentials, ...tokens }, env);
-    }
-  });
   return client;
 }
 
@@ -121,49 +115,41 @@ function validateGmailEnv(env) {
   }
 }
 
-function writeToken(tokens, env) {
-  const path = tokenPath(env);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(tokens, null, 2), { mode: 0o600 });
-}
-
 function loadGmailToken(env) {
-  const envToken = parseGoogleOAuthToken(env.GOOGLE_OAUTH_TOKEN_JSON);
+  const raw = env.GMAIL_TOKEN_JSON || process.env.GMAIL_TOKEN_JSON;
+  const parsed = parseGoogleOAuthToken(raw);
+  if (raw && parsed.error) {
+    console.log("Gmail disabled: invalid GMAIL_TOKEN_JSON.");
+    return { token: null, source: "none", error: parsed.error };
+  }
+  const envToken = parsed.token;
   if (envToken) {
-    console.log("Gmail auth loaded from env.");
+    console.log("Gmail auth loaded from GMAIL_TOKEN_JSON.");
     return { token: envToken, source: "env" };
   }
 
-  const path = tokenPath(env);
-  if (existsSync(path)) {
-    const fileToken = safeJsonParse(readFileSync(path, "utf8"));
-    if (fileToken) {
-      console.log("Gmail auth loaded from file.");
-      return { token: fileToken, source: "file" };
-    }
-  }
-
   console.log("Gmail disabled.");
-  return { token: null, source: "none" };
+  return { token: null, source: "none", error: "" };
 }
 
 export function parseGoogleOAuthToken(value) {
-  if (!value) return null;
-  const parsed = safeJsonParse(String(value).trim());
-  if (!parsed || typeof parsed !== "object") return null;
-  if (!parsed.refresh_token && !parsed.access_token) return null;
-  return parsed;
+  if (!value) return { token: null, error: "" };
+  let parsed;
+  try {
+    parsed = JSON.parse(String(value).trim());
+  } catch {
+    return { token: null, error: "Invalid GMAIL_TOKEN_JSON: value must be valid JSON." };
+  }
+  if (!parsed || typeof parsed !== "object") return { token: null, error: "Invalid GMAIL_TOKEN_JSON: value must be valid JSON." };
+  if (!parsed.refresh_token && !parsed.access_token) return { token: null, error: "Invalid GMAIL_TOKEN_JSON: token JSON must include refresh_token or access_token." };
+  return { token: parsed, error: "" };
 }
 
 function missingTokenMessage(env) {
   if ((env.AGENT_MODE || "local") === "cloud") {
-    return "Gmail not connected in cloud. Run /gmail_auth or configure GOOGLE_OAUTH_TOKEN_JSON.";
+    return "Gmail not connected in cloud. Run /gmail_auth or configure GMAIL_TOKEN_JSON.";
   }
-  return "Gmail is not connected. Run /gmail_auth first.";
-}
-
-function tokenPath(env) {
-  return resolve(env.GMAIL_TOKEN_PATH || DEFAULT_TOKEN_PATH);
+  return "Gmail is not connected. Run /gmail_auth first, then set GMAIL_TOKEN_JSON.";
 }
 
 function header(headers, name) {
