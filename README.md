@@ -23,6 +23,13 @@ Cloud-safe:
 - `/digest`
 - `/morning` - fast morning dashboard
 - `/deepbrief` - institutional deep research note
+- `/jp` - Japan news intelligence
+- `/kr` - Korea news intelligence
+- `/sg` - Singapore news intelligence
+- `/eu` - Europe news intelligence
+- `/us` - United States news intelligence
+- `/cn` - China news intelligence
+- `/asean` - ASEAN regional news intelligence
 - `/brief`
 - `/market`
 - `/macro`
@@ -137,6 +144,13 @@ Then test:
 /digest
 /market
 /news
+/jp
+/kr
+/sg
+/eu
+/us
+/cn
+/asean
 /earnings
 /watchlist brief
 /morning
