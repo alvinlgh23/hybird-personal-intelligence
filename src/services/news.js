@@ -30,7 +30,10 @@ export function formatHeadlines(headlines) {
 
 export async function getMarketMovingHeadlines({ env, limit = 8 } = {}) {
   const headlines = await getTopHeadlines({ env, limit: 30 });
-  return categorizeHeadlines(headlines).filter(isMarketRelevant).slice(0, limit);
+  return categorizeHeadlines(headlines)
+    .filter(isMarketRelevant)
+    .sort((a, b) => b.relevanceScore - a.relevanceScore)
+    .slice(0, limit);
 }
 
 export async function getCompanyHeadlines(ticker, { env, limit = 2 } = {}) {
@@ -47,7 +50,15 @@ export function formatMarketMovingHeadlines(items) {
   return [
     "Market-Moving News",
     "",
-    ...items.map((item) => [`${item.category}: ${item.title}`, `Source: ${item.source || "RSS"}`, `Why it matters: ${item.why}`].join("\n")),
+    ...items.map((item) =>
+      [
+        `${item.category}: ${item.title}`,
+        `Source: ${item.source || "RSS"}`,
+        `Relevance: ${item.relevanceScore ?? "n/a"}`,
+        `Why it matters: ${item.why}`,
+        `Market narrative impact: ${item.marketNarrativeImpact || "Watch whether this changes liquidity, earnings revisions, or leadership."}`,
+      ].join("\n"),
+    ),
   ].join("\n\n");
 }
 
@@ -84,28 +95,50 @@ function parseRssItems(xml) {
 function categorizeHeadlines(headlines) {
   return headlines.map((item) => {
     const title = item.title.toLowerCase();
+    const relevanceScore = scoreNewsItem(item);
     if (/(fed|rate|yield|inflation|treasury|powell)/u.test(title)) {
-      return { ...item, category: "Fed / rates", why: "Rates shape liquidity, equity multiples, and crypto beta." };
+      return { ...item, relevanceScore, category: "Fed / rates", why: "Rates shape liquidity, equity multiples, and crypto beta.", marketNarrativeImpact: "Can reprice policy expectations, duration risk, and the durability of growth-stock rallies." };
     }
-    if (/(ai|nvidia|semiconductor|chip|amd|tsmc|avgo|micron)/u.test(title)) {
-      return { ...item, category: "AI / semiconductors", why: "AI capex and chip demand drive mega-cap risk appetite." };
+    if (/(\bai\b|nvidia|semiconductor|chip|amd|tsmc|avgo|micron|data center|datacenter)/u.test(title)) {
+      return { ...item, relevanceScore, category: "AI / semiconductors", why: "AI capex and chip demand drive mega-cap risk appetite.", marketNarrativeImpact: "Helps confirm or challenge the AI infrastructure spending narrative behind index leadership." };
     }
-    if (/(bitcoin|crypto|ethereum|eth|btc|etf)/u.test(title)) {
-      return { ...item, category: "Crypto", why: "Crypto momentum reflects liquidity and speculative risk appetite." };
+    if (/(bitcoin|crypto|ethereum|eth|btc|etf|stablecoin)/u.test(title)) {
+      return { ...item, relevanceScore, category: "Crypto", why: "Crypto momentum reflects liquidity and speculative risk appetite.", marketNarrativeImpact: "Can reveal whether risk appetite is broadening into speculative assets or fading despite equity strength." };
     }
     if (/(china|geopolitic|tariff|taiwan|war|sanction)/u.test(title)) {
-      return { ...item, category: "China / geopolitics", why: "Geopolitical risk can hit supply chains and global beta." };
+      return { ...item, relevanceScore, category: "China / geopolitics", why: "Geopolitical risk can hit supply chains and global beta.", marketNarrativeImpact: "May affect semis, supply chains, dollar demand, and risk premia." };
     }
-    return { ...item, category: "Major company news", why: "Single-name news can move sector leadership and index breadth." };
+    if (/(earnings|guidance|revenue|margin|capex|profit|sales)/u.test(title)) {
+      return { ...item, relevanceScore, category: "Earnings / guidance", why: "Earnings revisions and guidance shape leadership, multiples, and sector rotation.", marketNarrativeImpact: "Can validate or reject the current earnings narrative and force rotation across peers." };
+    }
+    return { ...item, relevanceScore, category: "Major company news", why: "Single-name news only matters if it affects sector leadership, index breadth, or earnings revisions.", marketNarrativeImpact: "Watch for read-through into mega-cap tech, AI infrastructure, liquidity, or broad market leadership." };
   });
 }
 
 function isMarketRelevant(item) {
   const title = item.title.toLowerCase();
-  if (/(coffee|cocoa|gold|tariff)/u.test(title)) {
-    return /(fed|rate|yield|inflation|treasury|dollar|china|geopolitic|sanction|trade war|recession|risk|market|stocks|supply chain|oil|energy)/u.test(title);
-  }
-  return true;
+  if (item.relevanceScore >= 4) return true;
+  if (/(coffee|cocoa|gold|settle|settlement|minor|recap)/u.test(title)) return false;
+  if (/tariff/u.test(title)) return /(china|trade war|inflation|supply chain|semiconductor|autos|market|stocks)/u.test(title);
+  return item.relevanceScore >= 2;
+}
+
+export function scoreNewsItem(item) {
+  const title = String(item?.title || "").toLowerCase();
+  let score = 0;
+
+  if (/(fed|powell|fomc|cpi|pce|treasury|yield|yields|rates|inflation|jobs|payroll|auction)/u.test(title)) score += 5;
+  if (/(nvda|nvidia|msft|microsoft|aapl|apple|amzn|amazon|googl|google|alphabet|meta|tesla|tsla|pltr|palantir|mu|micron|tsm|tsmc|amd|avgo|broadcom|crm|salesforce|snow|snowflake|cost|costco|dell)/u.test(title)) score += 4;
+  if (/(ai capex|artificial intelligence|\bai\b|semiconductor|chip|chips|data center|datacenter|gpu|hbm)/u.test(title)) score += 4;
+  if (/(bitcoin|btc|ethereum|eth|crypto|etf flows|etf|stablecoin|stablecoins)/u.test(title)) score += 3;
+  if (/(china|taiwan|geopolitic|war|sanction|oil shock|energy shock|crude|opec)/u.test(title)) score += 3;
+  if (/(earnings|guidance|revenue|margin|capex|profit|sales|beat|miss)/u.test(title)) score += 3;
+
+  if (/(market talk|stocks mixed|set to open|futures edge|morning bid|wrap|recap|settle|settlement)/u.test(title)) score -= 2;
+  if (/(coffee|cocoa|corn|soybean|wheat|livestock|random)/u.test(title)) score -= 3;
+  if (!/(fed|cpi|pce|treasury|yield|rate|inflation|\bai\b|chip|semiconductor|bitcoin|crypto|china|oil|earnings|guidance|revenue|margin|capex|nvda|nvidia|msft|aapl|amzn|googl|meta|tsla|pltr|amd|tsm|mu|avgo|crm|snow|cost|dell)/u.test(title)) score -= 1;
+
+  return Math.max(0, Math.min(10, score));
 }
 
 function companyAliases(ticker) {

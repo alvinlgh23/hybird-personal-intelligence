@@ -157,7 +157,7 @@ export function parseGoogleOAuthToken(value) {
 
 function missingTokenMessage(env) {
   if ((env.AGENT_MODE || "local") === "cloud") {
-    return "Gmail not connected in cloud mode.";
+    return "Gmail not connected in cloud. Run /gmail_auth or configure GOOGLE_OAUTH_TOKEN_JSON.";
   }
   return "Gmail is not connected. Run /gmail_auth first.";
 }

@@ -21,7 +21,8 @@ Cloud-safe:
 - `/gmail_code <code-or-url>`
 - `/gmail_export_token`
 - `/digest`
-- `/morning`
+- `/morning` - fast morning dashboard
+- `/deepbrief` - institutional deep research note
 - `/brief`
 - `/market`
 - `/macro`
@@ -139,6 +140,7 @@ Then test:
 /earnings
 /watchlist brief
 /morning
+/deepbrief
 /chrome
 ```
 
@@ -179,6 +181,7 @@ Telegram test commands:
 /earnings
 /watchlist brief
 /morning
+/deepbrief
 ```
 
 ## Gmail OAuth
@@ -229,7 +232,7 @@ Token loading priority:
 If Gmail is disabled in cloud mode, `/morning` and `/digest` show:
 
 ```text
-Gmail not connected in cloud mode.
+Gmail not connected in cloud. Run /gmail_auth or configure GOOGLE_OAUTH_TOKEN_JSON.
 ```
 
 To create the Railway token JSON, first make Gmail work locally, then:

@@ -92,7 +92,7 @@ async function handleUpdate(update) {
 
 function safeUserError(error) {
   const message = error?.message || "";
-  const safePrefixes = ["Missing Gmail config", "Gmail is not connected", "Gmail not connected in cloud mode", "Missing dependency", "Invalid ticker"];
+  const safePrefixes = ["Missing Gmail config", "Gmail is not connected", "Gmail not connected in cloud", "Missing dependency", "Invalid ticker"];
   if (safePrefixes.some((prefix) => message.startsWith(prefix))) return message;
   return "Something went wrong while handling that request. Try again in a moment.";
 }
