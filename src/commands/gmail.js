@@ -33,6 +33,7 @@ export async function handleGmailCommand(text, { env, context }) {
   }
 
   if (text.startsWith("/gmail_export_token")) {
+    if (!isOwner(context.userId, env)) return "Gmail token export is owner-only.";
     return exportGmailToken({ env });
   }
 
@@ -57,6 +58,14 @@ export async function handleGmailCommand(text, { env, context }) {
   }
 
   return null;
+}
+
+function isOwner(userId, env) {
+  const owner = (env.TELEGRAM_ALLOWED_USER_IDS || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean)[0];
+  return owner ? String(userId) === owner : true;
 }
 
 function formatUnreadEmails(emails) {

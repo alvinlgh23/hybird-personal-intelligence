@@ -1,17 +1,18 @@
-import { generateDigest } from "../ai/router.js";
+import { generateDeepBrief, generateDigest } from "../ai/router.js";
 import { formatPct, formatPrice, formatValue } from "../utils/format.js";
 import { buildEmailDigest } from "./emailDigest.js";
 import { getEarningsOverview, formatEarningsOverview } from "./earnings.js";
 import { listUnreadEmails } from "./gmail.js";
 import { fetchYahooQuote, getMarketSnapshot, getQuotes, inferMarketRegime } from "./marketData.js";
 import { formatMarketMovingHeadlines, getMarketMovingHeadlines } from "./news.js";
+import { runValuation, valuationAvailable } from "./valuation.js";
 import { buildWatchlistBrief } from "./watchlist.js";
 
 const CLOUD_GMAIL_MESSAGE = "Gmail not connected in cloud. Run /gmail_auth or configure GOOGLE_OAUTH_TOKEN_JSON.";
 const FOCUS_TICKERS = ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META", "TSLA", "PLTR", "MU", "TSM", "AMD", "AVGO", "CRM", "SNOW", "COST", "DELL"];
 
 export async function buildMorningDigest({ env }) {
-  const context = await loadMorningContext(env);
+  const context = await loadMorningContext(env, { includeModel: false });
   const fallback = buildMorningFallback(context);
   const prompt = [
     "Write a fast, high-signal morning dashboard for Telegram. Optimize for a 30-60 second read right after waking up.",
@@ -38,34 +39,41 @@ export async function buildMorningDigest({ env }) {
 }
 
 export async function buildDeepBrief({ env }) {
-  const context = await loadMorningContext(env);
+  const context = await loadMorningContext(env, { includeModel: true });
   const fallback = buildDeepBriefFallback(context);
   const prompt = [
-    "Write an institutional-grade cross-asset morning intelligence brief for Telegram.",
-    "Voice: hedge-fund morning note / macro desk strategist. Detailed, analytical, and cause-and-effect driven.",
+    "Write a complete institutional capital-flow intelligence report for Telegram.",
+    "Voice: hedge-fund strategist / capital-flow analyst. Detailed, structured, and cause-and-effect driven.",
+    "Use modelOutput as the core input when present; otherwise synthesize from market, news, earnings, and structure data.",
     "Use exactly these section headers:",
-    "1. TOP 3 THINGS THAT ACTUALLY MATTER",
-    "2. MACRO REGIME",
-    "3. CROSS-ASSET INTERPRETATION",
-    "4. MARKET STRUCTURE",
-    "5. EARNINGS + MEGA CAP INTELLIGENCE",
-    "6. CRYPTO + LIQUIDITY",
-    "7. POSITIONING + RISK",
-    "8. WHAT TO WATCH NEXT",
-    "9. FINAL INTERPRETATION",
-    "Use scenario-based thinking and second-order effects.",
-    "Explain yields vs growth stocks, DXY vs crypto, oil vs inflation, semiconductors vs AI momentum, and liquidity vs speculative assets.",
-    "Discuss narrow leadership, AI concentration risk, momentum crowding, defensive rotation, cyclicals vs growth, mega-cap/AI earnings, and what would invalidate the current trend.",
+    "1. GLOBAL LIQUIDITY CONDITIONS",
+    "2. MACRO FRAGILITY ANALYSIS",
+    "3. MACRO CATALYST MONITOR",
+    "4. SECTOR ROTATION ANALYSIS",
+    "5. SECTOR POSITIONING ANALYSIS",
+    "6. COMPANY INTELLIGENCE",
+    "7. POSITIONING / OVERHEAT",
+    "8. FINAL MARKET INTERPRETATION",
+    "9. CAPITAL FLOW STORY",
+    "10. MARKET PHASE",
+    "11. LEADERSHIP DURABILITY",
+    "12. REGIME PLAYBOOK",
+    "13. MARKET RISK MAP",
+    "14. SCENARIO ANALYSIS",
+    "15. EARLY ROTATION CANDIDATES",
+    "16. CROWDING VS QUALITY MATRIX",
+    "17. NARRATIVE DECAY WARNINGS",
+    "Include US10Y, US30Y, DXY, USDJPY/carry, VIX, liquidity regime, breadth, sector rotation, capital flow story, market phase, risk map, scenario analysis, and narrative decay warnings.",
     "Do not give direct buy/sell advice. End with: Not financial advice.",
     "",
     "Input:",
     JSON.stringify(buildAiInput(context), null, 2),
   ].join("\n");
 
-  return generateDigest(prompt, { env, fallback, maxOutputTokens: 5200 });
+  return generateDeepBrief(prompt, { env, fallback, maxOutputTokens: 5200 });
 }
 
-async function loadMorningContext(env) {
+async function loadMorningContext(env, { includeModel = false } = {}) {
   const market = await safeSection("market", () => getMarketSnapshot(), null);
   const [gmail, earnings, watchlist, news, structure] = await Promise.all([
     buildGmailSection(env),
@@ -74,6 +82,7 @@ async function loadMorningContext(env) {
     safeSection("news", () => getMarketMovingHeadlines({ env, limit: 5 }), []),
     safeSection("market structure", () => getMarketStructure(), emptyStructure()),
   ]);
+  const modelOutput = includeModel ? await safeSection("model output", () => getModelOutput(env, structure.value), []) : { ok: true, value: [], message: "" };
 
   return {
     snapshot: market.value,
@@ -82,6 +91,7 @@ async function loadMorningContext(env) {
     watchlist,
     headlines: news.value,
     structure,
+    modelOutput,
     sectionStatus: {
       gmail: gmail.ok ? "ok" : gmail.message,
       market: market.ok ? "ok" : market.message,
@@ -89,6 +99,7 @@ async function loadMorningContext(env) {
       watchlist: watchlist.ok ? "ok" : watchlist.message,
       news: news.ok ? "ok" : news.message,
       marketStructure: structure.ok ? "ok" : structure.message,
+      modelOutput: modelOutput.ok ? "ok" : modelOutput.message,
     },
   };
 }
@@ -101,6 +112,7 @@ function buildAiInput(context) {
     earnings: context.earnings.value,
     watchlist: context.watchlist.value,
     structure: context.structure.value,
+    modelOutput: context.modelOutput.value,
     emailDigest: context.gmail.value,
     sectionStatus: context.sectionStatus,
   };
@@ -128,9 +140,11 @@ async function safeSection(name, fn, fallback) {
 }
 
 async function getMarketStructure() {
-  const [vix, oil, rsp, iwm, soxx, focusQuotes] = await Promise.all([
+  const [vix, oil, us30y, usdJpy, rsp, iwm, soxx, focusQuotes] = await Promise.all([
     fetchYahooQuote("%5EVIX", "VIX"),
     fetchYahooQuote("CL=F", "WTI crude"),
+    fetchYahooQuote("%5ETYX", "US30Y"),
+    fetchYahooQuote("JPY=X", "USDJPY"),
     fetchYahooQuote("RSP", "S&P 500 equal weight"),
     fetchYahooQuote("IWM", "Russell 2000"),
     fetchYahooQuote("SOXX", "Semiconductors"),
@@ -140,12 +154,32 @@ async function getMarketStructure() {
   return {
     volatility: vix,
     oil,
+    us30y,
+    usdJpy,
     breadthProxies: { equalWeightSp500: rsp, russell2000: iwm },
     semiconductors: soxx,
     focusQuotes: focusQuotes.filter(Boolean),
     stablecoinFlows: "not available from configured data sources",
     cryptoEtfFlows: "not available from configured data sources",
+    m2Trend: "not available from configured data sources",
+    consumerSentiment: "not available from configured data sources",
+    pmiIsm: "not available from configured data sources",
   };
+}
+
+async function getModelOutput(env, structure) {
+  if (!valuationAvailable(env)) return [];
+  const candidates = [...new Set([...(structure?.focusQuotes || []).sort((a, b) => Math.abs(b.changePct || 0) - Math.abs(a.changePct || 0)).slice(0, 4).map((item) => item.symbol), "NVDA", "PLTR"])]
+    .filter(Boolean)
+    .slice(0, 6);
+  const results = await Promise.all(candidates.map((ticker) => runValuation(ticker, { env, mode: "full" }).catch((error) => ({ ok: false, ticker, message: safeErrorMessage("model", error) }))));
+  return results.map((result) => ({
+    ticker: result.ticker,
+    ok: result.ok,
+    summary: result.data?.summary || result.message || "",
+    data: result.data?.data || result.data || null,
+    warnings: result.data?.warnings || [],
+  }));
 }
 
 function buildMorningFallback(context) {
@@ -172,36 +206,59 @@ function buildMorningFallback(context) {
 }
 
 function buildDeepBriefFallback(context) {
-  const topThree = topThreeThings(context);
   return [
-    "Institutional Deep Brief",
+    "Capital-Flow Deep Brief",
     "",
-    "1. TOP 3 THINGS THAT ACTUALLY MATTER",
-    ...topThree.map((item, index) => `${index + 1}. ${item}`),
+    "1. GLOBAL LIQUIDITY CONDITIONS",
+    globalLiquidityFallback(context.snapshot, context.structure.value),
     "",
-    "2. MACRO REGIME",
-    context.snapshot ? [marketSnapshotLines(context.snapshot, context.structure.value), "", marketReasoning(context.snapshot)].join("\n") : "Market data unavailable.",
+    "2. MACRO FRAGILITY ANALYSIS",
+    macroFragilityFallback(context),
     "",
-    "3. CROSS-ASSET INTERPRETATION",
-    crossAssetFallback(context.snapshot, context.structure.value),
+    "3. MACRO CATALYST MONITOR",
+    "Watch CPI, PCE, PPI, labor-market data, Treasury auctions, Fed speakers, and any inflation surprise that can reprice the rate path.",
     "",
-    "4. MARKET STRUCTURE",
+    "4. SECTOR ROTATION ANALYSIS",
     marketStructureFallback(context.structure.value),
     "",
-    "5. EARNINGS + MEGA CAP INTELLIGENCE",
+    "5. SECTOR POSITIONING ANALYSIS",
+    sectorPositioningFallback(context.structure.value),
+    "",
+    "6. COMPANY INTELLIGENCE",
     [formatEarningsOverview(context.earnings.value), "", "Mega-cap/watchlist context", context.watchlist.value].join("\n"),
     "",
-    "6. CRYPTO + LIQUIDITY",
-    cryptoLiquidityFallback(context.snapshot),
+    "7. POSITIONING / OVERHEAT",
+    modelOutputFallback(context.modelOutput.value) || positioningFallback(context.snapshot, context.structure.value),
     "",
-    "7. POSITIONING + RISK",
-    positioningFallback(context.snapshot, context.structure.value),
-    "",
-    "8. WHAT TO WATCH NEXT",
-    [todaysFocusFallback(context), "", formatMarketMovingHeadlines(context.headlines)].join("\n"),
-    "",
-    "9. FINAL INTERPRETATION",
+    "8. FINAL MARKET INTERPRETATION",
     actionableConclusionFallback(context.snapshot),
+    "",
+    "9. CAPITAL FLOW STORY",
+    capitalFlowStoryFallback(context),
+    "",
+    "10. MARKET PHASE",
+    marketPhaseFallback(context.snapshot, context.structure.value),
+    "",
+    "11. LEADERSHIP DURABILITY",
+    leadershipDurabilityFallback(context.structure.value),
+    "",
+    "12. REGIME PLAYBOOK",
+    regimePlaybookFallback(context.snapshot),
+    "",
+    "13. MARKET RISK MAP",
+    marketRiskMapFallback(context.snapshot),
+    "",
+    "14. SCENARIO ANALYSIS",
+    scenarioFallback(context.snapshot),
+    "",
+    "15. EARLY ROTATION CANDIDATES",
+    earlyRotationFallback(context.structure.value),
+    "",
+    "16. CROWDING VS QUALITY MATRIX",
+    crowdingQualityFallback(context.structure.value),
+    "",
+    "17. NARRATIVE DECAY WARNINGS",
+    narrativeDecayFallback(context),
     "",
     "Not financial advice.",
   ].join("\n\n");
@@ -354,6 +411,108 @@ function actionableConclusionFallback(snapshot) {
   if (!snapshot) return "Current posture: neutral until market data confirms. Watch rates, dollar, breadth, AI leadership, and volatility.";
   const regime = inferMarketRegime(snapshot);
   return `Current posture: ${regime.riskTone}, but confirmation matters more than the label. The trend needs breadth and liquidity confirmation; it is invalidated by a dollar/yield reversal, rising volatility, weak breadth, or crypto failing to confirm speculative appetite.`;
+}
+
+function globalLiquidityFallback(snapshot, structure) {
+  if (!snapshot) return "Liquidity data unavailable.";
+  return [
+    `US10Y: ${formatYield(snapshot.macro.us10y)} | US30Y: ${formatYield(structure?.us30y)} | DXY: ${formatQuote(snapshot.macro.dxy)} | USDJPY: ${formatQuote(structure?.usdJpy)} | VIX: ${formatQuote(structure?.volatility)}.`,
+    `Liquidity regime: ${inferMarketRegime(snapshot).liquidity}. M2 trend: ${structure?.m2Trend || "not available"}. Carry pressure should be inferred from USDJPY and yields until a dedicated feed is configured.`,
+  ].join("\n");
+}
+
+function macroFragilityFallback(context) {
+  return [
+    `Breadth proxy: ${formatQuote(context.structure.value?.breadthProxies?.equalWeightSp500)} versus Nasdaq ${formatQuote(context.snapshot?.macro?.nasdaq)}.`,
+    `Consumer sentiment: ${context.structure.value?.consumerSentiment || "not available"}. PMI/ISM: ${context.structure.value?.pmiIsm || "not available"}.`,
+    "Interpretation: if asset prices rise while breadth, small caps, or real-economy indicators lag, the move is more narrative-led and more sensitive to macro disappointment.",
+  ].join("\n");
+}
+
+function sectorPositioningFallback(structure) {
+  return [
+    `Leading proxy: semiconductors at ${formatQuote(structure?.semiconductors)}.`,
+    `Breadth participation: equal-weight S&P ${formatQuote(structure?.breadthProxies?.equalWeightSp500)}, Russell 2000 ${formatQuote(structure?.breadthProxies?.russell2000)}.`,
+    "Narrative type: AI infrastructure / duration growth. Stage: momentum if semis lead with breadth; fragility if semis alone carry index performance.",
+  ].join("\n");
+}
+
+function modelOutputFallback(modelOutput) {
+  if (!Array.isArray(modelOutput) || !modelOutput.length) return "";
+  return modelOutput
+    .filter((item) => item.ok)
+    .slice(0, 5)
+    .map((item) => `${item.ticker}: ${item.summary || "model output available"} ${item.warnings?.length ? `Warnings: ${item.warnings.join("; ")}` : ""}`.trim())
+    .join("\n");
+}
+
+function capitalFlowStoryFallback(context) {
+  const semis = context.structure.value?.semiconductors;
+  const breadth = context.structure.value?.breadthProxies?.equalWeightSp500;
+  return `Capital appears most sensitive to the AI/liquidity channel: semis ${formatQuote(semis)}, breadth ${formatQuote(breadth)}, DXY ${formatQuote(context.snapshot?.macro?.dxy)}, and US10Y ${formatYield(context.snapshot?.macro?.us10y)}. A durable flow story needs leadership to broaden from AI into equal-weight, small caps, or software infrastructure.`;
+}
+
+function marketPhaseFallback(snapshot, structure) {
+  if (!snapshot) return "Phase: unknown.";
+  const regime = inferMarketRegime(snapshot);
+  const semis = structure?.semiconductors?.changePct || 0;
+  const breadth = structure?.breadthProxies?.equalWeightSp500?.changePct || 0;
+  if (regime.riskTone === "risk-on" && breadth > 0 && semis > 0) return "Phase: institutional momentum. Liquidity and leadership are aligned, but watch crowding.";
+  if (semis > 0 && breadth <= 0) return "Phase: narrative-led momentum / fragility. Leadership is concentrated and vulnerable to AI de-risking.";
+  if (regime.riskTone === "risk-off") return "Phase: distribution / correction risk. Liquidity or beta confirmation is weak.";
+  return "Phase: transition. Confirmation from breadth, volatility, and crypto is still needed.";
+}
+
+function leadershipDurabilityFallback(structure) {
+  const semis = structure?.semiconductors?.changePct || 0;
+  const breadth = structure?.breadthProxies?.equalWeightSp500?.changePct || 0;
+  const vix = structure?.volatility?.changePct || 0;
+  const score = Math.max(0, Math.min(100, 55 + Math.sign(semis) * 15 + Math.sign(breadth) * 20 - Math.sign(vix) * 10));
+  return `${score}/100. Durability improves when semis, breadth, small caps, and low volatility confirm together; it weakens when leadership narrows into crowded AI names.`;
+}
+
+function regimePlaybookFallback(snapshot) {
+  const regime = snapshot ? inferMarketRegime(snapshot) : null;
+  return [
+    `Usually favored: ${regime?.liquidity === "easier backdrop" ? "quality growth, AI infrastructure, crypto beta if confirmed, and liquid mega-cap leadership" : "cash-flow quality, defensives, lower-duration balance sheets, and lower-beta exposures"}.`,
+    "Usually vulnerable: crowded long-duration growth if yields/dollar reverse, speculative beta without earnings support, and low-quality momentum after volatility rises.",
+  ].join("\n");
+}
+
+function marketRiskMapFallback(snapshot) {
+  const risks = snapshot ? inferMarketRegime(snapshot).risks : ["macro data unavailable"];
+  return [
+    "Inflation surprise: can reprice Fed path and yields.",
+    "Narrow leadership: raises index fragility.",
+    "Fed sensitivity: high while duration risk leads.",
+    "Dollar/yield reversal: direct pressure on growth and crypto.",
+    `Current inferred risks: ${risks.join("; ")}.`,
+  ].join("\n");
+}
+
+function scenarioFallback(snapshot) {
+  return [
+    "Bullish confirmation: yields stay contained, DXY softens, breadth improves, semis hold leadership, VIX remains stable, and crypto stops diverging negatively.",
+    "Bearish invalidation: US10Y/DXY reverse higher, VIX jumps, equal-weight and small caps lag badly, AI leadership fades, or earnings guidance fails to support the narrative.",
+  ].join("\n");
+}
+
+function earlyRotationFallback(structure) {
+  const quotes = (structure?.focusQuotes || []).filter((item) => Number.isFinite(item.changePct)).sort((a, b) => b.changePct - a.changePct).slice(0, 5);
+  return quotes.length ? quotes.map((item) => `${item.symbol}: ${formatPct(item.changePct)}`).join(", ") : "No early rotation candidates available from current quote set.";
+}
+
+function crowdingQualityFallback(structure) {
+  const leaders = (structure?.focusQuotes || []).filter((item) => Number.isFinite(item.changePct)).sort((a, b) => b.changePct - a.changePct).slice(0, 4);
+  if (!leaders.length) return "Matrix unavailable.";
+  return leaders.map((item) => `${item.symbol}: high-quality/moderate-crowding if supported by earnings revisions; speculative blowoff risk rises if price runs without guidance support.`).join("\n");
+}
+
+function narrativeDecayFallback(context) {
+  return [
+    "Watch for AI leadership failing to respond to good news, semis lagging Nasdaq, breadth deteriorating, crypto failing despite easier liquidity, or earnings beats being sold.",
+    context.headlines?.[0] ? `Current headline to test narrative durability: ${context.headlines[0].title}` : "No high-signal headline currently tests the dominant narrative.",
+  ].join("\n");
 }
 
 function marketSentence(regime) {

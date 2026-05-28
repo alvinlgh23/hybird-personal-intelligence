@@ -19,6 +19,10 @@ export function generateDigest(prompt, options = {}) {
   return route(prompt, { ...options, providers: ["gemini", "openai"], maxOutputTokens: options.maxOutputTokens || 2200 });
 }
 
+export function generateDeepBrief(prompt, options = {}) {
+  return route(prompt, { ...options, providers: ["openai", "gemini"], maxOutputTokens: options.maxOutputTokens || 5200 });
+}
+
 async function route(prompt, options) {
   const env = options.env || process.env;
   const errors = [];
