@@ -59,27 +59,27 @@ export async function listUnreadEmails({ env, limit = 10 }) {
 
 export async function gmailStatus({ env }) {
   validateGmailEnv(env);
-  return readToken(env) ? "Gmail is connected." : "Gmail is not connected. Run /gmail_auth first.";
+  return loadGmailToken(env).token ? "Gmail is connected." : missingTokenMessage(env);
 }
 
 export function exportGmailToken({ env }) {
   if (env.ALLOW_TOKEN_EXPORT !== "true") {
     return "Token export is disabled. Set ALLOW_TOKEN_EXPORT=true locally, restart, run /gmail_export_token, then turn it off again.";
   }
-  const token = readToken(env);
+  const { token } = loadGmailToken(env);
   if (!token) return "No Gmail token found. Run /gmail_auth first.";
   return ["GOOGLE_OAUTH_TOKEN_JSON for Railway Variables:", "", compactJson(token), "", "Turn ALLOW_TOKEN_EXPORT=false after copying."].join("\n");
 }
 
 async function authorizedClient(env) {
   const client = await createOAuthClient(env);
-  const token = readToken(env);
+  const { token, source } = loadGmailToken(env);
   if (!token) {
-    throw new Error("Gmail is not connected. Run /gmail_auth first.");
+    throw new Error(missingTokenMessage(env));
   }
   client.setCredentials(token);
   client.on("tokens", (tokens) => {
-    if (tokens.refresh_token || tokens.access_token) {
+    if (source !== "env" && (tokens.refresh_token || tokens.access_token)) {
       writeToken({ ...client.credentials, ...tokens }, env);
     }
   });
@@ -113,11 +113,39 @@ function writeToken(tokens, env) {
   writeFileSync(path, JSON.stringify(tokens, null, 2), { mode: 0o600 });
 }
 
-function readToken(env) {
+function loadGmailToken(env) {
+  const envToken = parseGoogleOAuthToken(env.GOOGLE_OAUTH_TOKEN_JSON);
+  if (envToken) {
+    console.log("Gmail auth loaded from env.");
+    return { token: envToken, source: "env" };
+  }
+
   const path = tokenPath(env);
-  if (existsSync(path)) return safeJsonParse(readFileSync(path, "utf8"));
-  if (env.GOOGLE_OAUTH_TOKEN_JSON) return safeJsonParse(env.GOOGLE_OAUTH_TOKEN_JSON);
-  return null;
+  if (existsSync(path)) {
+    const fileToken = safeJsonParse(readFileSync(path, "utf8"));
+    if (fileToken) {
+      console.log("Gmail auth loaded from file.");
+      return { token: fileToken, source: "file" };
+    }
+  }
+
+  console.log("Gmail disabled.");
+  return { token: null, source: "none" };
+}
+
+export function parseGoogleOAuthToken(value) {
+  if (!value) return null;
+  const parsed = safeJsonParse(String(value).trim());
+  if (!parsed || typeof parsed !== "object") return null;
+  if (!parsed.refresh_token && !parsed.access_token) return null;
+  return parsed;
+}
+
+function missingTokenMessage(env) {
+  if ((env.AGENT_MODE || "local") === "cloud") {
+    return "Gmail not connected in cloud mode.";
+  }
+  return "Gmail is not connected. Run /gmail_auth first.";
 }
 
 function tokenPath(env) {

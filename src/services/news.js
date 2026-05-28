@@ -30,7 +30,7 @@ export function formatHeadlines(headlines) {
 
 export async function getMarketMovingHeadlines({ env, limit = 8 } = {}) {
   const headlines = await getTopHeadlines({ env, limit: 30 });
-  return categorizeHeadlines(headlines).slice(0, limit);
+  return categorizeHeadlines(headlines).filter(isMarketRelevant).slice(0, limit);
 }
 
 export async function getCompanyHeadlines(ticker, { env, limit = 2 } = {}) {
@@ -98,6 +98,14 @@ function categorizeHeadlines(headlines) {
     }
     return { ...item, category: "Major company news", why: "Single-name news can move sector leadership and index breadth." };
   });
+}
+
+function isMarketRelevant(item) {
+  const title = item.title.toLowerCase();
+  if (/(coffee|cocoa|gold|tariff)/u.test(title)) {
+    return /(fed|rate|yield|inflation|treasury|dollar|china|geopolitic|sanction|trade war|recession|risk|market|stocks|supply chain|oil|energy)/u.test(title);
+  }
+  return true;
 }
 
 function companyAliases(ticker) {

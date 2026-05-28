@@ -213,9 +213,23 @@ Google Cloud setup:
    /gmail_code <code-or-full-redirect-url>
    ```
 
-## Gmail Token Export For Railway
+## Railway Gmail Setup
 
-After Gmail works locally:
+Railway cannot read your Mac's `.tokens/gmail-token.json`, so cloud Gmail uses `GOOGLE_OAUTH_TOKEN_JSON`.
+
+Token loading priority:
+
+1. `GOOGLE_OAUTH_TOKEN_JSON` environment variable.
+2. Local `GMAIL_TOKEN_PATH` file for Mac development.
+3. Gmail disabled gracefully.
+
+If Gmail is disabled in cloud mode, `/morning` and `/digest` show:
+
+```text
+Gmail not connected in cloud mode.
+```
+
+To create the Railway token JSON, first make Gmail work locally, then:
 
 1. Set:
 
@@ -238,7 +252,16 @@ After Gmail works locally:
 
 5. Set `ALLOW_TOKEN_EXPORT=false` locally and restart.
 
-Tokens are never logged. `.env`, `.tokens/`, and token JSON files are ignored by git.
+Add these Railway variables for Gmail:
+
+```env
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:3000/oauth2callback
+GOOGLE_OAUTH_TOKEN_JSON=<copied-json>
+```
+
+Tokens are never logged. The app only logs whether Gmail auth loaded from env, file, or is disabled. `.env`, `.tokens/`, and token JSON files are ignored by git.
 
 ## Valuation Model Integration
 
