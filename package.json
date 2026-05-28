@@ -1,0 +1,17 @@
+{
+  "name": "hybrid-financial-personal-intelligence-os",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/bot.js",
+    "check": "node scripts/check-source.js",
+    "postinstall": "python3 -m pip install -r models/valuation/requirements.txt || true"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "googleapis": "^140.0.1"
+  }
+}
