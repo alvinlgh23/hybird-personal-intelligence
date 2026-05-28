@@ -37,9 +37,14 @@ export async function handleGmailCommand(text, { env, context }) {
     return exportGmailToken({ env });
   }
 
-  if (text.startsWith("/gmail")) {
-    await context.loading("Reading unread Gmail messages...");
+  if (text.startsWith("/gmail_raw")) {
+    await context.loading("Reading raw unread Gmail messages...");
     return formatUnreadEmails(await listUnreadEmails({ env, limit: 10 }));
+  }
+
+  if (text.startsWith("/gmail")) {
+    await context.loading("Building inbox intelligence...");
+    return buildEmailDigest(await listUnreadEmails({ env, limit: 20 }), { env });
   }
 
   if (text.startsWith("/digest")) {

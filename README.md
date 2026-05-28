@@ -14,7 +14,8 @@ No large frameworks are used. The app is Node.js ESM, the Gmail integration uses
 Cloud-safe:
 
 - `/health`
-- `/gmail`
+- `/gmail` - AI inbox intelligence
+- `/gmail_raw` - raw unread Gmail list
 - `/gmail_status`
 - `/gmail_reconnect`
 - `/gmail_auth`
@@ -140,6 +141,7 @@ Then test:
 ```text
 /health
 /gmail
+/gmail_raw
 /gmail_status
 /digest
 /market
