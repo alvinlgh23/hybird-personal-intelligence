@@ -1,21 +1,19 @@
-import { summarizeWithCodex } from "./summarizer.js";
+import { generateMarketAnalysis, generateValuationAnalysis } from "./router.js";
 import { inferMarketRegime } from "../services/marketData.js";
 
 export async function summarizeMarketQuestion(question, context, { env }) {
-  if ((env.AGENT_MODE || "local") !== "local") {
-    return ruleBasedMarketAnswer(question, context);
-  }
-
-  return summarizeWithCodex(
+  const prompt = buildPrompt(
     [
       "Answer the user's investment/news question using the supplied market, news, earnings, and watchlist context.",
+      "Use a professional research-note style with clear signal, evidence, caveats, and what to watch next.",
       "Do not give personalized financial advice or buy/sell instructions.",
       "Use language like 'possible interpretation', 'the signal suggests', and 'not financial advice'.",
       "Keep it concise for Telegram.",
-    ].join(" "),
+    ],
     { question, context },
-    { env, fallback: ruleBasedMarketAnswer(question, context) },
   );
+
+  return generateMarketAnalysis(prompt, { env, fallback: ruleBasedMarketAnswer(question, context) });
 }
 
 export function ruleBasedMarketAnswer(question, context) {
@@ -37,19 +35,18 @@ export function ruleBasedMarketAnswer(question, context) {
 
 export async function summarizeValuationAnalysis(ticker, valuationOutput, marketData, news, earnings, macro, { env }) {
   const context = { ticker, valuationOutput, marketData, news, earnings, macro };
-  if ((env.AGENT_MODE || "local") === "local") {
-    return summarizeWithCodex(
-      [
-        "Create a concise investment-style analysis from valuation, price, news, earnings, and macro context.",
-        "Use these exact sections: Executive summary, Valuation read, Momentum / chase-risk read, Macro context, Bull case, Bear case, Key catalysts, Key risks, What to watch next, Final interpretation.",
-        "Do not give direct buy/sell instructions. Use probabilistic language: suggests, appears, watch, risk, possible interpretation.",
-        "Write a detailed research-style Telegram report for slow reading. End with: Not financial advice.",
-      ].join(" "),
-      context,
-      { env, fallback: ruleBasedValuationAnalysis(ticker, context) },
-    );
-  }
-  return ruleBasedValuationAnalysis(ticker, context);
+  const prompt = buildPrompt(
+    [
+      "Create a professional investment research note from valuation, price, news, earnings, and macro context.",
+      "Use these exact sections: Executive summary, Macro regime, Liquidity conditions, Valuation read, Momentum / chase-risk read, Bull case, Bear case, Key catalysts, Key risks, What to watch next, Final interpretation.",
+      "Be specific and evidence-led. Avoid shallow generic risk-on/risk-off language.",
+      "Do not give direct buy/sell instructions. Use probabilistic language: suggests, appears, watch, risk, possible interpretation.",
+      "Write a detailed Telegram report for slow reading. End with: Not financial advice.",
+    ],
+    context,
+  );
+
+  return generateValuationAnalysis(prompt, { env, fallback: ruleBasedValuationAnalysis(ticker, context) });
 }
 
 function ruleBasedValuationAnalysis(ticker, context) {
@@ -104,4 +101,18 @@ function compact(value) {
   if (!value) return "n/a";
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return text.length > 220 ? `${text.slice(0, 220)}...` : text;
+}
+
+function buildPrompt(instructions, data) {
+  return [
+    instructions.join(" "),
+    "",
+    "Constraints:",
+    "- Do not expose secrets, credentials, or raw tokens.",
+    "- Do not provide direct buy/sell advice.",
+    "- Use only the supplied context.",
+    "",
+    "Input:",
+    JSON.stringify(data, null, 2),
+  ].join("\n");
 }

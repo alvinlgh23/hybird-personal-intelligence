@@ -1,3 +1,4 @@
+import { generateDigest } from "../ai/router.js";
 import { buildEmailDigest } from "./emailDigest.js";
 import { getEarningsOverview, formatEarningsOverview } from "./earnings.js";
 import { listUnreadEmails } from "./gmail.js";
@@ -17,7 +18,7 @@ export async function buildMorningDigest({ env }) {
 
   const digest = emails.length ? await buildEmailDigest(emails, { env }) : "Daily Digest\n\nGmail unavailable or no unread messages.";
 
-  return [
+  const fallback = [
     "Personal Morning Brief",
     "",
     "1. What needs my attention",
@@ -43,4 +44,16 @@ export async function buildMorningDigest({ env }) {
     "",
     formatMarketMovingHeadlines(headlines),
   ].join("\n\n");
+
+  const prompt = [
+    "Create a professional personal morning intelligence brief for Telegram.",
+    "Use research-note style, not shallow bullets. Preserve useful specifics from the supplied market, macro, earnings, watchlist, email digest, and headlines context.",
+    "Use these sections: Executive summary, Macro regime, Liquidity conditions, Market / valuation read, Momentum / chase-risk read, Key catalysts, Key risks, What needs attention, What to watch next, Final interpretation.",
+    "Avoid direct buy/sell advice. End with: Not financial advice.",
+    "",
+    "Input:",
+    JSON.stringify({ snapshot, headlines, earnings, watchlist, emailDigest: digest }, null, 2),
+  ].join("\n");
+
+  return generateDigest(prompt, { env, fallback, maxOutputTokens: 2600 });
 }

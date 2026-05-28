@@ -57,10 +57,15 @@ Railway cloud:
 ```env
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALLOWED_USER_IDS=
+GEMINI_API_KEY=
 AGENT_MODE=cloud
 TELEGRAM_MODE=webhook
 PUBLIC_URL=https://your-app.up.railway.app
 PORT=3000
+
+GEMINI_MODEL=gemini-2.5-flash
+OPENAI_API_KEY=
+OPENAI_MODEL=
 
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -92,8 +97,13 @@ AGENT_MODE=local
 TELEGRAM_MODE=polling
 
 ENABLE_CODEX_EXEC=false
-CODEX_WORKSPACE=/Users/alvinlim/Documents/Automation
+CODEX_WORKSPACE=/Users/alvinlim/Desktop/Startup-Insight-AI/Automation
 CODEX_TIMEOUT_MS=120000
+
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+OPENAI_API_KEY=
+OPENAI_MODEL=
 
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -278,9 +288,28 @@ Commands:
 
 Railway variables:
 
+Required:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_ALLOWED_USER_IDS`
+- `GEMINI_API_KEY`
+
+Optional:
+
+- `OPENAI_API_KEY`
+- `GEMINI_MODEL` (defaults to `gemini-2.5-flash`)
+- `OPENAI_MODEL`
+
 ```env
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_ALLOWED_USER_IDS=
+GEMINI_API_KEY=
 AGENT_MODE=cloud
 TELEGRAM_MODE=webhook
+PUBLIC_URL=https://your-app.up.railway.app
+GEMINI_MODEL=gemini-2.5-flash
+OPENAI_API_KEY=
+OPENAI_MODEL=
 MODEL_RUNNER_MODE=cloud
 VALUATION_MODEL_PATH=models/valuation/runner.py
 PYTHON_BIN=python3
@@ -333,7 +362,11 @@ Limitations:
 src/
   ai/
     marketSummarizer.js
+    router.js
     summarizer.js
+    providers/
+      gemini.js
+      openai.js
   bot.js
   commands/
     earnings.js

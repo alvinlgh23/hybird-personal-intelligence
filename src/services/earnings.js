@@ -1,3 +1,4 @@
+import { generateSummary } from "../ai/router.js";
 import { safeFetchJson } from "../utils/fetch.js";
 import { DEFAULT_IMPORTANT_TICKERS, fetchYahooQuote } from "./marketData.js";
 import { formatPct, formatPrice } from "../utils/format.js";
@@ -57,6 +58,36 @@ export function formatTickerEarnings(item) {
     "",
     "Not financial advice.",
   ].join("\n");
+}
+
+export function summarizeEarningsOverview(data, { env }) {
+  const fallback = formatEarningsOverview(data);
+  const prompt = [
+    "Create a concise earnings radar research note for Telegram.",
+    "Explain reporting calendar, estimate context, likely market sensitivity, catalysts, and risks.",
+    "Use these sections: Executive summary, Key catalysts, Key risks, What to watch next, Final interpretation.",
+    "Do not give direct buy/sell advice. End with: Not financial advice.",
+    "",
+    "Input:",
+    JSON.stringify(data, null, 2),
+  ].join("\n");
+
+  return generateSummary(prompt, { env, fallback, maxOutputTokens: 1600 });
+}
+
+export function summarizeTickerEarnings(item, { env }) {
+  const fallback = formatTickerEarnings(item);
+  const prompt = [
+    "Create a concise single-name earnings research note for Telegram.",
+    "Cover valuation sensitivity, expected catalysts, likely market reaction variables, and risks.",
+    "Use these sections: Executive summary, Key catalysts, Key risks, What to watch next, Final interpretation.",
+    "Do not give direct buy/sell advice. End with: Not financial advice.",
+    "",
+    "Input:",
+    JSON.stringify(item, null, 2),
+  ].join("\n");
+
+  return generateSummary(prompt, { env, fallback, maxOutputTokens: 1400 });
 }
 
 function formatEarningLine(item) {

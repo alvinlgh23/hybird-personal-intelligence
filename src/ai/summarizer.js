@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { generateSummary } from "./router.js";
 import { truncate } from "../utils/format.js";
 
 const MAX_PROMPT_CHARS = 12000;
@@ -22,7 +23,7 @@ export async function summarizeWithCodex(instructions, data, { env, fallback = "
   ].join("\n");
 
   try {
-    return await runCodex(prompt, { env });
+    return await generateSummary(prompt, { env, fallback });
   } catch {
     return fallback;
   }

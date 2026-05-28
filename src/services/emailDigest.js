@@ -1,4 +1,4 @@
-import { summarizeWithCodex } from "../ai/summarizer.js";
+import { generateDigest } from "../ai/router.js";
 
 export async function buildEmailDigest(emails, { env }) {
   if (!emails.length) return "Daily Digest\n\nNo unread Gmail messages.";
@@ -10,17 +10,19 @@ export async function buildEmailDigest(emails, { env }) {
     preview: email.preview,
   }));
 
-  return summarizeWithCodex(
-    [
-      "Create a concise Gmail digest.",
-      "Categorize messages into Important, Finance, University/Work, Action Needed, Promotions, and Noise.",
-      "Only include categories with useful content.",
-      "Use short bullets. Do not expose raw email tokens or secrets.",
-      "Summarize previews only; do not reproduce sensitive full content.",
-    ].join(" "),
-    compact,
-    { env, fallback: fallbackDigest(compact) },
-  );
+  const prompt = [
+    "Create a concise Gmail digest.",
+    "Categorize messages into Important, Finance, University/Work, Action Needed, Promotions, and Noise.",
+    "Only include categories with useful content.",
+    "Use short bullets with concrete action cues.",
+    "Do not expose raw email tokens or secrets.",
+    "Summarize previews only; do not reproduce sensitive full content.",
+    "",
+    "Input:",
+    JSON.stringify(compact, null, 2),
+  ].join("\n");
+
+  return generateDigest(prompt, { env, fallback: fallbackDigest(compact), maxOutputTokens: 1400 });
 }
 
 function fallbackDigest(emails) {

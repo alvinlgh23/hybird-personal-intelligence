@@ -1,3 +1,4 @@
+import { generateSummary } from "../ai/router.js";
 import { safeFetchText } from "../utils/fetch.js";
 
 const DEFAULT_FEEDS = [
@@ -48,6 +49,23 @@ export function formatMarketMovingHeadlines(items) {
     "",
     ...items.map((item) => [`${item.category}: ${item.title}`, `Source: ${item.source || "RSS"}`, `Why it matters: ${item.why}`].join("\n")),
   ].join("\n\n");
+}
+
+export function summarizeMarketMovingHeadlines(items, { env }) {
+  const fallback = formatMarketMovingHeadlines(items);
+  if (!items.length) return fallback;
+
+  const prompt = [
+    "Create a concise market-moving news research note for Telegram.",
+    "Group the supplied headlines into themes and explain why they matter for macro, liquidity, valuation, momentum, and risk appetite.",
+    "Use these sections: Executive summary, Key catalysts, Key risks, What to watch next, Final interpretation.",
+    "Do not give direct buy/sell advice. End with: Not financial advice.",
+    "",
+    "Input:",
+    JSON.stringify(items, null, 2),
+  ].join("\n");
+
+  return generateSummary(prompt, { env, fallback, maxOutputTokens: 1600 });
 }
 
 function parseRssItems(xml) {
