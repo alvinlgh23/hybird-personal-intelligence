@@ -162,9 +162,11 @@ async function getModelOutput(env, structure) {
 }
 
 function buildMorningTerminal(context) {
+  const signals = rankMorningSignals(context);
   return renderMorningBrief({
     date: compactDate(),
-    signals: rankMorningSignals(context),
+    dominantNarrative: dominantNarrative(context, signals),
+    signals,
     marketPulse: marketPulseLines(context),
     watch: watchToday(context),
   });
@@ -174,8 +176,9 @@ function rankMorningSignals(context) {
   const signals = [];
   const headlineSignals = (context.headlines || []).slice(0, 5).map((item) => ({
     title: cleanHeadline(item.title),
+    source: item.source || "RSS",
     aiInsight: morningHeadlineInsight(item),
-    signal: clampSignal(item.relevanceScore || 6),
+    priority: clampPriority(item.relevanceScore || 6),
   }));
   signals.push(...headlineSignals);
 
@@ -192,8 +195,8 @@ function rankMorningSignals(context) {
   if (earnings) signals.push(earnings);
 
   return dedupeSignals(signals)
-    .filter((item) => item.signal >= 6)
-    .sort((a, b) => b.signal - a.signal)
+    .filter((item) => item.priority >= 6)
+    .sort((a, b) => b.priority - a.priority)
     .concat(fallbackSignals())
     .slice(0, 3);
 }
@@ -206,13 +209,14 @@ function liquiditySignal(context) {
   const easing = (dxy?.changePct || 0) < -0.15 || (us10y?.changePct || 0) < -0.15;
   const tightening = (dxy?.changePct || 0) > 0.15 || (us10y?.changePct || 0) > 0.15;
   return {
-    title: easing ? "Dollar/yield pressure is easing" : tightening ? "Dollar/yield pressure is back on the tape" : "Liquidity signal is mixed",
+    title: easing ? "Dollar/yield pressure is easing" : tightening ? "Dollar/yield pressure is back on the tape" : "Liquidity tape is mixed",
+    source: "Cross-asset data",
     aiInsight: easing
       ? "Liquidity backdrop still favors long-duration AI trades if breadth confirms."
       : tightening
         ? "Higher yields or dollar strength can quickly compress duration growth and crypto beta."
         : "Cross-asset liquidity is not giving a clean green light; wait for DXY and US10Y confirmation.",
-    signal: tightening || easing ? 8 : 6,
+    priority: tightening || easing ? 8 : 6,
   };
 }
 
@@ -224,12 +228,13 @@ function aiInfrastructureSignal(context) {
   const weak = (semis?.changePct || 0) < -0.5;
   return {
     title: weak ? "Semis are not confirming AI risk appetite" : strong ? "AI infrastructure remains the market’s swing factor" : "AI leadership needs confirmation",
+    source: "Semis / Nasdaq",
     aiInsight: weak
       ? "If semis lag while indexes hold, leadership quality is deteriorating beneath the surface."
       : strong
         ? "Capital is still treating compute, chips, and data-center capex as the core growth-duration trade."
         : "Watch whether chip leadership broadens or fades into another narrow mega-cap tape.",
-    signal: strong || weak ? 8 : 7,
+    priority: strong || weak ? 8 : 7,
   };
 }
 
@@ -241,12 +246,13 @@ function cryptoSignal(context) {
   const strong = (btc?.changePct || 0) > 1 || (eth?.changePct || 0) > 1;
   return {
     title: weak ? "Crypto beta is not confirming equity optimism" : strong ? "Crypto beta is confirming speculative liquidity" : "Crypto beta is neutral",
+    source: "Crypto tape",
     aiInsight: weak
       ? "BTC/ETH weakness says speculative liquidity is thinner than the equity tape suggests."
       : strong
         ? "Crypto strength points to broader risk appetite, especially if DXY and yields stay contained."
         : "No strong crypto confirmation yet; treat equity strength without beta follow-through carefully.",
-    signal: weak || strong ? 7 : 6,
+    priority: weak || strong ? 7 : 6,
   };
 }
 
@@ -257,9 +263,27 @@ function earningsSignal(context) {
   if (!item?.ticker) return null;
   return {
     title: `${item.ticker} keeps earnings sensitivity on deck`,
+    source: "Earnings radar",
     aiInsight: "Guidance quality matters more than the print; AI capex, margins, and forward demand decide whether leadership can broaden.",
-    signal: today.length ? 7 : 6,
+    priority: today.length ? 7 : 6,
   };
+}
+
+function dominantNarrative(context, signals) {
+  const text = signals.map((item) => `${item.title} ${item.aiInsight}`).join(" ").toLowerCase();
+  const hasAi = /(ai|semi|chip|compute|data-center|datacenter|nvidia|capex)/u.test(text);
+  const hasGeo = /(china|taiwan|sanction|export|defense|geopolitic|war|security)/u.test(text);
+  const hasLiquidity = /(liquidity|yield|dxy|dollar|rate|duration)/u.test(text);
+  const hasCrypto = /(crypto|btc|bitcoin|eth|ethereum|speculative)/u.test(text);
+  const hasEarnings = /(earnings|guidance|margin|revenue|capex)/u.test(text);
+
+  if (hasAi && hasGeo) return "AI infrastructure is increasingly merging with export controls, defense alignment, and sovereign industrial policy. Markets are pricing compute capacity as both growth engine and geopolitical leverage.";
+  if (hasAi && hasLiquidity) return "The operating picture is still anchored by the AI-liquidity channel. Contained yields support duration growth, but narrow leadership keeps the tape vulnerable to any dollar or rate reversal.";
+  if (hasGeo && hasLiquidity) return "Geopolitics and liquidity are the two pressure valves today: policy shocks can move supply chains while yields and the dollar decide whether risk appetite can absorb them.";
+  if (hasCrypto && hasLiquidity) return "Speculative liquidity is the key read-through. Crypto divergence versus equities would signal that the rally is narrower than headline index moves imply.";
+  if (hasEarnings && hasAi) return "Earnings quality is now testing the AI narrative. Guidance, margins, and capex language matter more than backward-looking beats.";
+  if (!context.headlines?.length) return "Live narrative flow is thin; the cleanest operating read comes from yields, DXY, semis, breadth, and crypto beta.";
+  return "The global tape is being shaped by a small number of strategic pressure points rather than broad news flow. Watch whether capital moves toward compute, policy protection, and liquidity-sensitive risk.";
 }
 
 function morningHeadlineInsight(item) {
@@ -287,9 +311,8 @@ function marketPulseLines(context) {
 }
 
 function watchToday(context) {
-  const watch = ["semis", "AI infra", "yields", "geopolitics", "energy"];
+  const watch = ["semis", "AI infra", "yields", "defense", "geopolitics", "energy"];
   if ((context.earnings.value?.reportingToday || []).length || (context.earnings.value?.upcoming || []).length) watch.push("earnings");
-  watch.push("liquidity");
   return [...new Set(watch)].slice(0, 7);
 }
 
@@ -301,7 +324,7 @@ function cleanHeadline(value) {
   return String(value || "Global signal").replace(/\s+/gu, " ").trim().slice(0, 110);
 }
 
-function clampSignal(value) {
+function clampPriority(value) {
   const score = Math.round(Number(value) || 6);
   return Math.max(6, Math.min(10, score));
 }
@@ -326,18 +349,21 @@ function fallbackSignals() {
   return [
     {
       title: "Data feeds are thin; prioritize confirmation over narrative",
+      source: "System",
       aiInsight: "When live feeds are missing, the first clean tells are yields, DXY, semis, and crypto beta.",
-      signal: 6,
+      priority: 6,
     },
     {
       title: "AI infrastructure remains the default leadership test",
+      source: "System",
       aiInsight: "Compute, chips, and data-center capex still decide whether growth leadership is durable or just narrow index momentum.",
-      signal: 6,
+      priority: 6,
     },
     {
       title: "Liquidity remains the main cross-asset pressure valve",
+      source: "System",
       aiInsight: "A dollar/yield reversal can quickly change the tone for duration equities, crypto, and speculative beta.",
-      signal: 6,
+      priority: 6,
     },
   ];
 }
