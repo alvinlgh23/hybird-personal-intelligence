@@ -1,10 +1,11 @@
-import { generateDeepBrief, generateDigest } from "../ai/router.js";
-import { formatPct, formatPrice, formatValue } from "../utils/format.js";
+import { generateDeepBrief } from "../ai/router.js";
+import { formatPct, formatValue } from "../utils/format.js";
 import { buildEmailDigest } from "./emailDigest.js";
 import { getEarningsOverview, formatEarningsOverview } from "./earnings.js";
 import { listUnreadEmails } from "./gmail.js";
 import { fetchYahooQuote, getMarketSnapshot, getQuotes, inferMarketRegime } from "./marketData.js";
 import { getMarketMovingHeadlines } from "./news.js";
+import { renderMorningBrief } from "./intelligenceRenderer.js";
 import { runValuation, valuationAvailable } from "./valuation.js";
 import { buildWatchlistBrief } from "./watchlist.js";
 
@@ -13,29 +14,7 @@ const FOCUS_TICKERS = ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META", "TSLA", 
 
 export async function buildMorningDigest({ env }) {
   const context = await loadMorningContext(env, { includeModel: false });
-  const fallback = buildMorningFallback(context);
-  const prompt = [
-    "Write a compressed signal-first morning dashboard for Telegram mobile. Target 30-90 seconds of reading.",
-    "Answer: what happened overnight, what the market is pricing, what matters today, and whether Gmail has action items.",
-    "Do not write a macro essay. No giant paragraphs. No generic risk-on/risk-off label unless explained.",
-    "Use exactly these section headers:",
-    "TOP 3 GLOBAL SIGNALS",
-    "MARKET REGIME",
-    "OVERNIGHT HEADLINES",
-    "WHAT ACTUALLY MATTERS TODAY",
-    "WATCHLIST",
-    "EMAIL INTELLIGENCE",
-    "For every headline include source name, source category if present, why it matters, main impact, and signal score.",
-    "Respect importance-weighted compression: signal >=8 can have more detail; 5-7 gets one tight sentence; below 5 should be skipped.",
-    "Mention source convergence when confidenceNote says multiple major sources are converging.",
-    "Use concrete transmission channels: yields to duration equities, DXY to crypto, semis to AI capex, oil to inflation, policy to capital flows.",
-    "Keep the full output under 900 words. No direct buy/sell advice.",
-    "",
-    "Input:",
-    JSON.stringify(buildAiInput(context), null, 2),
-  ].join("\n");
-
-  return generateDigest(prompt, { env, fallback, maxOutputTokens: 1800 });
+  return buildMorningTerminal(context);
 }
 
 export async function buildDeepBrief({ env }) {
@@ -182,33 +161,185 @@ async function getModelOutput(env, structure) {
   }));
 }
 
-function buildMorningFallback(context) {
+function buildMorningTerminal(context) {
+  return renderMorningBrief({
+    date: compactDate(),
+    signals: rankMorningSignals(context),
+    marketPulse: marketPulseLines(context),
+    watch: watchToday(context),
+  });
+}
+
+function rankMorningSignals(context) {
+  const signals = [];
+  const headlineSignals = (context.headlines || []).slice(0, 5).map((item) => ({
+    title: cleanHeadline(item.title),
+    aiInsight: morningHeadlineInsight(item),
+    signal: clampSignal(item.relevanceScore || 6),
+  }));
+  signals.push(...headlineSignals);
+
+  const liquidity = liquiditySignal(context);
+  if (liquidity) signals.push(liquidity);
+
+  const ai = aiInfrastructureSignal(context);
+  if (ai) signals.push(ai);
+
+  const crypto = cryptoSignal(context);
+  if (crypto) signals.push(crypto);
+
+  const earnings = earningsSignal(context);
+  if (earnings) signals.push(earnings);
+
+  return dedupeSignals(signals)
+    .filter((item) => item.signal >= 6)
+    .sort((a, b) => b.signal - a.signal)
+    .concat(fallbackSignals())
+    .slice(0, 3);
+}
+
+function liquiditySignal(context) {
+  if (!context.snapshot) return null;
+  const dxy = context.snapshot.macro.dxy;
+  const us10y = context.snapshot.macro.us10y;
+  if (!Number.isFinite(dxy?.changePct) && !Number.isFinite(us10y?.changePct)) return null;
+  const easing = (dxy?.changePct || 0) < -0.15 || (us10y?.changePct || 0) < -0.15;
+  const tightening = (dxy?.changePct || 0) > 0.15 || (us10y?.changePct || 0) > 0.15;
+  return {
+    title: easing ? "Dollar/yield pressure is easing" : tightening ? "Dollar/yield pressure is back on the tape" : "Liquidity signal is mixed",
+    aiInsight: easing
+      ? "Liquidity backdrop still favors long-duration AI trades if breadth confirms."
+      : tightening
+        ? "Higher yields or dollar strength can quickly compress duration growth and crypto beta."
+        : "Cross-asset liquidity is not giving a clean green light; wait for DXY and US10Y confirmation.",
+    signal: tightening || easing ? 8 : 6,
+  };
+}
+
+function aiInfrastructureSignal(context) {
+  const semis = context.structure.value?.semiconductors;
+  const nasdaq = context.snapshot?.macro?.nasdaq;
+  if (!Number.isFinite(semis?.changePct) && !Number.isFinite(nasdaq?.changePct)) return null;
+  const strong = (semis?.changePct || 0) > 0.5 || (nasdaq?.changePct || 0) > 0.5;
+  const weak = (semis?.changePct || 0) < -0.5;
+  return {
+    title: weak ? "Semis are not confirming AI risk appetite" : strong ? "AI infrastructure remains the market’s swing factor" : "AI leadership needs confirmation",
+    aiInsight: weak
+      ? "If semis lag while indexes hold, leadership quality is deteriorating beneath the surface."
+      : strong
+        ? "Capital is still treating compute, chips, and data-center capex as the core growth-duration trade."
+        : "Watch whether chip leadership broadens or fades into another narrow mega-cap tape.",
+    signal: strong || weak ? 8 : 7,
+  };
+}
+
+function cryptoSignal(context) {
+  const btc = context.snapshot?.crypto?.btc;
+  const eth = context.snapshot?.crypto?.eth;
+  if (!Number.isFinite(btc?.changePct) && !Number.isFinite(eth?.changePct)) return null;
+  const weak = (btc?.changePct || 0) < -1 || (eth?.changePct || 0) < -1;
+  const strong = (btc?.changePct || 0) > 1 || (eth?.changePct || 0) > 1;
+  return {
+    title: weak ? "Crypto beta is not confirming equity optimism" : strong ? "Crypto beta is confirming speculative liquidity" : "Crypto beta is neutral",
+    aiInsight: weak
+      ? "BTC/ETH weakness says speculative liquidity is thinner than the equity tape suggests."
+      : strong
+        ? "Crypto strength points to broader risk appetite, especially if DXY and yields stay contained."
+        : "No strong crypto confirmation yet; treat equity strength without beta follow-through carefully.",
+    signal: weak || strong ? 7 : 6,
+  };
+}
+
+function earningsSignal(context) {
+  const today = context.earnings.value?.reportingToday || [];
+  const upcoming = context.earnings.value?.upcoming || [];
+  const item = today[0] || upcoming[0];
+  if (!item?.ticker) return null;
+  return {
+    title: `${item.ticker} keeps earnings sensitivity on deck`,
+    aiInsight: "Guidance quality matters more than the print; AI capex, margins, and forward demand decide whether leadership can broaden.",
+    signal: today.length ? 7 : 6,
+  };
+}
+
+function morningHeadlineInsight(item) {
+  const text = `${item.title || ""} ${item.category || ""}`.toLowerCase();
+  if (/(ai|semiconductor|chip|nvidia|data center|datacenter|gpu)/u.test(text)) return "AI hardware demand, supply chains, and capex durability remain the dominant growth narrative.";
+  if (/(fed|yield|rate|treasury|inflation|cpi|pce|powell)/u.test(text)) return "Rates are the valuation pressure valve for duration equities, credit, and crypto beta.";
+  if (/(china|taiwan|war|sanction|defense|geopolitic|tariff)/u.test(text)) return "Geopolitical risk is feeding directly into supply chains, sanctions, defense alignment, and risk premia.";
+  if (/(oil|energy|opec|crude|gas)/u.test(text)) return "Energy volatility is the fastest route from geopolitics into inflation risk and margin pressure.";
+  if (/(bitcoin|crypto|ethereum|stablecoin|etf)/u.test(text)) return "Crypto remains the cleanest read on speculative liquidity beyond mega-cap equities.";
+  if (/(earnings|guidance|margin|revenue|capex)/u.test(text)) return "Earnings guidance is the test for whether price momentum has fundamental backing.";
+  return item.marketNarrativeImpact || "Strategic read-through depends on whether capital, policy, or sector leadership reacts.";
+}
+
+function marketPulseLines(context) {
+  const snap = context.snapshot;
+  if (!snap) return ["Market data unavailable"];
   return [
-    "Morning Intelligence Dashboard",
-    "",
-    "TOP 3 GLOBAL SIGNALS",
-    topThreeThings(context)
-      .slice(0, 3)
-      .map((item, index) => `${index + 1}. ${item}`)
-      .join("\n"),
-    "",
-    "MARKET REGIME",
-    marketRegimeFallback(context),
-    "",
-    "OVERNIGHT HEADLINES",
-    formatDashboardHeadlines(context.headlines),
-    "",
-    "WHAT ACTUALLY MATTERS TODAY",
-    whatActuallyMattersFallback(context),
-    "",
-    "WATCHLIST",
-    watchlistFallback(context),
-    "",
-    "EMAIL INTELLIGENCE",
-    compressEmailSection(context.gmail.value),
-    "",
-    "Not financial advice.",
-  ].join("\n\n");
+    `SPX ${shortPct(snap.macro.sp500?.changePct)}`,
+    `NDX ${shortPct(snap.macro.nasdaq?.changePct)}`,
+    `BTC ${shortPct(snap.crypto.btc?.changePct)}`,
+    `ETH ${shortPct(snap.crypto.eth?.changePct)}`,
+    `DXY ${shortPct(snap.macro.dxy?.changePct)}`,
+    `US10Y ${Number.isFinite(snap.macro.us10y?.price) ? `${snap.macro.us10y.price.toFixed(2)}%` : "n/a"}`,
+  ];
+}
+
+function watchToday(context) {
+  const watch = ["semis", "AI infra", "yields", "geopolitics", "energy"];
+  if ((context.earnings.value?.reportingToday || []).length || (context.earnings.value?.upcoming || []).length) watch.push("earnings");
+  watch.push("liquidity");
+  return [...new Set(watch)].slice(0, 7);
+}
+
+function compactDate() {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" }).format(new Date());
+}
+
+function cleanHeadline(value) {
+  return String(value || "Global signal").replace(/\s+/gu, " ").trim().slice(0, 110);
+}
+
+function clampSignal(value) {
+  const score = Math.round(Number(value) || 6);
+  return Math.max(6, Math.min(10, score));
+}
+
+function shortPct(value) {
+  if (!Number.isFinite(value)) return "n/a";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}%`;
+}
+
+function dedupeSignals(signals) {
+  const seen = new Set();
+  return signals.filter((item) => {
+    const key = item.title.toLowerCase().replace(/[^\w\s]/gu, "").split(/\s+/u).slice(0, 6).join(" ");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function fallbackSignals() {
+  return [
+    {
+      title: "Data feeds are thin; prioritize confirmation over narrative",
+      aiInsight: "When live feeds are missing, the first clean tells are yields, DXY, semis, and crypto beta.",
+      signal: 6,
+    },
+    {
+      title: "AI infrastructure remains the default leadership test",
+      aiInsight: "Compute, chips, and data-center capex still decide whether growth leadership is durable or just narrow index momentum.",
+      signal: 6,
+    },
+    {
+      title: "Liquidity remains the main cross-asset pressure valve",
+      aiInsight: "A dollar/yield reversal can quickly change the tone for duration equities, crypto, and speculative beta.",
+      signal: 6,
+    },
+  ];
 }
 
 function buildDeepBriefFallback(context) {
@@ -270,139 +401,6 @@ function buildDeepBriefFallback(context) {
   ].join("\n\n");
 }
 
-function formatDashboardHeadlines(headlines) {
-  if (!headlines.length) return "No high-signal overnight headlines found. Avoid over-reading generic market chatter.";
-  return headlines
-    .slice(0, 5)
-    .map((item) =>
-      [
-        `${item.title}`,
-        `Source: ${item.source || "RSS"}${item.sourceCategory ? ` (${item.sourceCategory})` : ""}`,
-        `→ Why it matters: ${compressSentence(item.why, item.relevanceScore)}`,
-        `→ Main impact: ${compressSentence(item.marketNarrativeImpact, item.relevanceScore)}`,
-        item.confidenceNote ? `Confidence: ${item.confidenceNote}` : "",
-        `Signal: ${item.relevanceScore ?? "n/a"}/10`,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    )
-    .join("\n\n");
-}
-
-function marketRegimeFallback(context) {
-  if (!context.snapshot) return "Market data unavailable. Watch rates, DXY, Nasdaq futures, BTC/ETH, and VIX first.";
-  return [
-    `BTC: ${formatAsset(context.snapshot.crypto.btc)} | ETH: ${formatAsset(context.snapshot.crypto.eth)}`,
-    `DXY: ${formatQuote(context.snapshot.macro.dxy)} | US10Y: ${formatYield(context.snapshot.macro.us10y)} | Nasdaq: ${formatQuote(context.snapshot.macro.nasdaq)} | VIX: ${formatQuote(context.structure.value?.volatility)}`,
-    morningMarketRead(context.snapshot, context.structure.value),
-  ].join("\n");
-}
-
-function whatActuallyMattersFallback(context) {
-  const headline = context.headlines?.[0];
-  const regime = context.snapshot ? inferMarketRegime(context.snapshot) : null;
-  if (!headline && !regime) return "No dominant signal yet. Treat the open as confirmation-seeking: rates, dollar, breadth, semis, and crypto decide whether risk appetite is real.";
-  return [
-    headline ? `${headline.title} is the narrative test: ${compressSentence(headline.marketNarrativeImpact, headline.relevanceScore)}` : "",
-    regime ? `The key transmission channel is ${regime.liquidity}: if yields or DXY reverse higher, long-duration AI equities and crypto beta lose support quickly.` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function watchlistFallback(context) {
-  const movers = (context.structure.value?.focusQuotes || [])
-    .filter((item) => Number.isFinite(item.changePct))
-    .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))
-    .slice(0, 5);
-  if (!movers.length) return "Top movers unavailable. Watch AI leaders, semis, BTC/ETH, DXY, and US10Y.";
-  return movers.map((item) => `- ${item.symbol}: ${formatPct(item.changePct)} (${formatValue(item.price)})`).join("\n");
-}
-
-function compressEmailSection(text) {
-  const value = String(text || "").trim();
-  if (!value) return "No important unread Gmail messages.";
-  const lines = value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !/promotions|suppressed low-signal|ignore/i.test(line))
-    .slice(0, 10);
-  return lines.length ? lines.join("\n") : "No high-signal unread Gmail messages.";
-}
-
-function earningsRadarFallback(earnings, structure) {
-  const tracked = [...(earnings.reportingToday || []), ...(earnings.upcoming || [])].slice(0, 8);
-  const reactions = quoteMap(structure?.focusQuotes || []);
-  if (!tracked.length) return "No focus-name earnings date is flagged for today. Watch guidance read-through from AI infrastructure, mega-cap software, consumer demand, and margin commentary.";
-  return tracked
-    .map((item) => {
-      const reaction = reactions.get(item.ticker);
-      return [
-        `${item.ticker}: ${item.earningsDate?.startsWith(new Date().toISOString().slice(0, 10)) ? "reporting today" : "upcoming"} (${item.earningsDate || "date n/a"})`,
-        `Reaction: ${reaction ? formatQuote(reaction) : "n/a"}`,
-        `Narrative impact: Watch whether guidance confirms earnings revisions, AI/capex demand, margin resilience, or consumer softness.`,
-      ].join("\n");
-    })
-    .join("\n\n");
-}
-
-function marketSnapshotLines(snapshot, structure) {
-  return [
-    `S&P 500: ${formatQuote(snapshot.macro.sp500)}`,
-    `Nasdaq: ${formatQuote(snapshot.macro.nasdaq)}`,
-    `DXY: ${formatQuote(snapshot.macro.dxy)}`,
-    `US10Y: ${formatYield(snapshot.macro.us10y)}`,
-    `VIX: ${formatQuote(structure?.volatility)}`,
-    `BTC: ${formatAsset(snapshot.crypto.btc)}`,
-    `ETH: ${formatAsset(snapshot.crypto.eth)}`,
-    `Semis proxy: ${formatQuote(structure?.semiconductors)}`,
-    `Equal-weight / breadth proxy: ${formatQuote(structure?.breadthProxies?.equalWeightSp500)}`,
-  ].join("\n");
-}
-
-function morningMarketRead(snapshot, structure) {
-  const regime = inferMarketRegime(snapshot);
-  const breadth = structure?.breadthProxies?.equalWeightSp500;
-  const semis = structure?.semiconductors;
-  return [
-    `The market is pricing ${regime.liquidity} with ${formatQuote(snapshot.macro.dxy)} DXY and ${formatYield(snapshot.macro.us10y)} US10Y, which is supportive only if rates and the dollar stay contained.`,
-    `The move looks ${breadth && semis && Number.isFinite(breadth.changePct) && Number.isFinite(semis.changePct) && breadth.changePct >= semis.changePct * 0.5 ? "healthier because breadth is participating" : "potentially narrow because AI/semis still need breadth confirmation"}.`,
-    `Crypto is ${regime.cryptoSentiment}; if BTC/ETH keep fading while Nasdaq rallies, speculative liquidity is not fully confirming the equity move.`,
-    "Confirmation comes from breadth, semis, lower volatility, and stable yields. Invalidation comes from a DXY/yield reversal, rising VIX, or mega-cap AI leadership fading.",
-  ].join(" ");
-}
-
-function compressSentence(text, score = 0) {
-  const value = String(text || "Watch whether this changes liquidity, earnings revisions, leadership, or capital flows.").replace(/\s+/gu, " ").trim();
-  if (score >= 8) return value;
-  const sentence = value.split(/(?<=[.!?])\s+/u).filter(Boolean)[0] || value;
-  return score >= 5 ? sentence.slice(0, 170) : sentence.slice(0, 115);
-}
-
-function todaysFocusFallback(context) {
-  const firstEarnings = context.earnings.value.reportingToday?.[0] || context.earnings.value.upcoming?.[0];
-  return [
-    "1. Rates/dollar: US10Y and DXY need to stay contained for growth-stock multiples and crypto beta to hold.",
-    "2. AI follow-through: semis and data-center beneficiaries must confirm that the AI capex story is broadening, not exhausting.",
-    "3. Breadth: equal-weight and small-cap proxies need to participate; otherwise the index move is fragile.",
-    firstEarnings ? `4. Earnings: ${firstEarnings.ticker} ${firstEarnings.earningsDate || ""} matters for guidance and narrative read-through.` : "4. Earnings: watch focus-name guidance, capex, margins, and market reaction.",
-    "5. Gmail/action items: scan the personal section for anything time-sensitive.",
-  ].join("\n");
-}
-
-function topThreeThings(context) {
-  const regime = context.snapshot ? inferMarketRegime(context.snapshot) : null;
-  const firstHeadline = context.headlines?.[0];
-  const semis = context.structure.value?.semiconductors;
-  const breadth = context.structure.value?.breadthProxies?.equalWeightSp500;
-  return [
-    regime ? `${marketSentence(regime)} The real question is whether liquidity support broadens beyond crowded AI/mega-cap leadership.` : "Market data is unavailable, so prioritize rates, dollar, breadth, and volatility confirmation.",
-    semis ? `AI infrastructure remains the swing factor: semis are ${formatQuote(semis)} versus equal-weight breadth at ${formatQuote(breadth)}.` : "AI/semiconductor leadership remains the key market-structure variable.",
-    firstHeadline ? `${firstHeadline.title}: ${firstHeadline.marketNarrativeImpact}` : "No high-signal headline dominates yet; avoid over-reading generic overnight noise.",
-  ];
-}
-
 function marketReasoning(snapshot) {
   const regime = inferMarketRegime(snapshot);
   return [
@@ -411,16 +409,6 @@ function marketReasoning(snapshot) {
     `Crypto sentiment is ${regime.cryptoSentiment}, which matters because BTC/ETH often reveal whether speculative liquidity is confirming the equity tape.`,
     `Main risks: ${regime.risks.join("; ")}.`,
   ].join(" ");
-}
-
-function crossAssetFallback(snapshot, structure) {
-  if (!snapshot) return "Cross-asset data unavailable.";
-  return [
-    `Yields vs growth: US10Y at ${formatYield(snapshot.macro.us10y)} is the pressure point for Nasdaq multiples.`,
-    `DXY vs crypto: DXY at ${formatQuote(snapshot.macro.dxy)} can either release or drain speculative liquidity.`,
-    `Oil vs inflation: WTI at ${formatQuote(structure?.oil)} matters because an oil shock can reprice inflation and Fed expectations.`,
-    `Semis vs AI: SOXX at ${formatQuote(structure?.semiconductors)} shows whether AI infrastructure momentum is still leading.`,
-  ].join("\n");
 }
 
 function marketStructureFallback(structure) {
@@ -446,15 +434,6 @@ function marketStructureFallback(structure) {
   ]
     .filter(Boolean)
     .join("\n");
-}
-
-function cryptoLiquidityFallback(snapshot) {
-  if (!snapshot) return "Crypto data unavailable.";
-  return [
-    `BTC is ${formatAsset(snapshot.crypto.btc)} and ETH is ${formatAsset(snapshot.crypto.eth)}.`,
-    `Sustainable crypto strength needs DXY at ${formatQuote(snapshot.macro.dxy)} and US10Y at ${formatYield(snapshot.macro.us10y)} to stay contained.`,
-    "Stablecoin and ETF flow feeds are not configured, so institutional participation cannot be confirmed directly.",
-  ].join("\n");
 }
 
 function positioningFallback(snapshot, structure) {
@@ -609,15 +588,6 @@ function emptyStructure() {
     stablecoinFlows: "not available",
     cryptoEtfFlows: "not available",
   };
-}
-
-function quoteMap(quotes) {
-  return new Map(quotes.map((quote) => [quote.symbol, quote]));
-}
-
-function formatAsset(asset) {
-  if (!asset) return "n/a";
-  return `${formatPrice(asset.price)} (${formatPct(asset.changePct)})`;
 }
 
 function formatQuote(quote) {
