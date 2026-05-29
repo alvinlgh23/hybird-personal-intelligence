@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { renderTelegramPlainFallback, renderTelegramSafeText } from "../renderers/telegramSafeRenderer.js";
 const TELEGRAM_LIMIT = 2400;
 const FALLBACK_LIMIT = 1800;
 
@@ -43,6 +44,25 @@ export function createTelegramService({ token, log = console } = {}) {
     });
   }
 
+  async function sendDocument(chatId, { filename, contentBase64, mimeType = "application/octet-stream", caption = "" }) {
+    const renderedCaption = renderTelegramText(caption).slice(0, 900);
+    log.log(`Telegram sendDocument filename=${filename || "file"} captionLength=${renderedCaption.length}.`);
+    const bytes = Uint8Array.from(Buffer.from(contentBase64 || "", "base64"));
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("disable_content_type_detection", "false");
+    if (renderedCaption) form.append("caption", renderedCaption);
+    form.append("document", new Blob([bytes], { type: mimeType }), filename || "file");
+
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+      method: "POST",
+      body: form,
+    });
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.description || "Telegram sendDocument failed");
+    return data;
+  }
+
   async function setWebhook(url) {
     return call("setWebhook", { url, allowed_updates: ["message"] });
   }
@@ -55,7 +75,7 @@ export function createTelegramService({ token, log = console } = {}) {
     });
   }
 
-  return { call, send, setWebhook, getUpdates };
+  return { call, send, sendDocument, setWebhook, getUpdates };
 }
 
 export function splitTelegramMessage(text, limit = TELEGRAM_LIMIT) {
@@ -93,29 +113,11 @@ export function splitTelegramMessage(text, limit = TELEGRAM_LIMIT) {
 }
 
 export function renderTelegramText(value) {
-  return stripMarkdownSyntax(String(value || ""))
-    .replace(/\r\n?/gu, "\n")
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/gu, "")
-    .replace(/[ \t]+\n/gu, "\n")
-    .replace(/\n{4,}/gu, "\n\n")
-    .trim();
+  return renderTelegramSafeText(value);
 }
 
 function renderPlainFallback(value) {
-  return renderTelegramText(value)
-    .replace(/[\\*_`[\]()~>#+\-=|{}.!]/gu, "")
-    .replace(/[ \t]{2,}/gu, " ")
-    .trim();
-}
-
-function stripMarkdownSyntax(value) {
-  return value
-    .replace(/\*\*([^*\n]+)\*\*/gu, "$1")
-    .replace(/__([^_\n]+)__/gu, "$1")
-    .replace(/\*([^*\n]+)\*/gu, "$1")
-    .replace(/_([^_\n]+)_/gu, "$1")
-    .replace(/`([^`\n]+)`/gu, "$1")
-    .replace(/\[([^\]\n]+)\]\(([^)\n]+)\)/gu, "$1 ($2)");
+  return renderTelegramPlainFallback(value);
 }
 
 function splitOversizedBlock(block, limit) {

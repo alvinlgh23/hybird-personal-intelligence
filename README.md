@@ -44,6 +44,15 @@ Cloud-safe:
 - `/watchlist remove <ticker>`
 - `/watchlist brief`
 - `/ask_market <question>`
+- `/status`
+- `/find <query>`
+- `/sendfile <query>`
+- `/searchcode <query>`
+- `/repo [name]`
+- `/logs`
+- `/railwaylogs`
+- `/recentfiles`
+- `/openproject <name>`
 
 Local-only:
 
@@ -74,6 +83,9 @@ AGENT_MODE=cloud
 TELEGRAM_MODE=webhook
 PUBLIC_URL=https://your-app.up.railway.app
 PORT=3000
+LOCAL_AGENT_URL=
+LOCAL_AGENT_TOKEN=
+LOCAL_AGENT_TIMEOUT_MS=12000
 
 GEMINI_MODEL=gemini-2.5-flash
 OPENAI_API_KEY=
@@ -122,6 +134,12 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://localhost:3000/oauth2callback
 GMAIL_TOKEN_JSON=
 ALLOW_TOKEN_EXPORT=false
+LOCAL_AGENT_TOKEN=
+LOCAL_AGENT_HOST=127.0.0.1
+LOCAL_AGENT_PORT=8787
+LOCAL_AGENT_ROOTS=/Users/alvinlim/Desktop/Startup-Insight-AI/Automation
+LOCAL_AGENT_RATE_LIMIT=40
+LOCAL_AGENT_TOOL_TIMEOUT_MS=12000
 
 MODEL_RUNNER_MODE=local
 VALUATION_MODEL_PATH=models/valuation/runner.py
@@ -136,6 +154,43 @@ cd /Users/alvinlim/Documents/Automation
 npm install
 AGENT_MODE=local TELEGRAM_MODE=polling npm start
 ```
+
+## Local Mac Agent
+
+The Local Mac agent is a secure deterministic tool server. It is not remote desktop software and does not expose arbitrary shell execution.
+
+It supports only predefined tools:
+
+- file/folder search inside `LOCAL_AGENT_ROOTS`
+- safe file sending with size limits
+- code keyword search
+- git status/recent commits using fixed `git` arguments
+- recent log snippets
+- recently modified files
+- project folder discovery
+
+Start it on your Mac:
+
+```sh
+LOCAL_AGENT_TOKEN=<long-random-token> \
+LOCAL_AGENT_ROOTS=/Users/alvinlim/Desktop/Startup-Insight-AI/Automation \
+npm run local-agent
+```
+
+By default it binds to `127.0.0.1:8787`. Do not expose it directly to the public internet. If Railway needs to reach it while you are outside, put it behind a private/zero-trust tunnel and set Railway:
+
+```env
+LOCAL_AGENT_URL=https://your-private-agent-url
+LOCAL_AGENT_TOKEN=<same-long-random-token>
+```
+
+Security defaults:
+
+- Telegram allowlist remains required.
+- Local agent requires bearer-token auth.
+- Tools are allowlisted; arbitrary terminal commands are not supported.
+- File access is restricted to `LOCAL_AGENT_ROOTS`.
+- Requests are rate-limited, timed out, and action-logged.
 
 Then test:
 

@@ -1,6 +1,7 @@
 import { commandOf } from "../utils/format.js";
 import { handleEarningsCommand } from "./earnings.js";
 import { handleGmailCommand } from "./gmail.js";
+import { handleInfrastructureCommand } from "./infrastructure.js";
 import { handleMarketCommand } from "./market.js";
 import { handleNewsCommand } from "./news.js";
 import { handleRegionCommand } from "./regions.js";
@@ -13,7 +14,7 @@ export function createCommandHandler({ env }) {
     const command = commandOf(text);
     if (!command) return "Send /help to see available commands.";
 
-    for (const handler of [handleSystemCommand, handleGmailCommand, handleRegionCommand, handleMarketCommand, handleNewsCommand, handleEarningsCommand, handleWatchlistCommand, handleValuationCommand]) {
+    for (const handler of [handleSystemCommand, handleInfrastructureCommand, handleGmailCommand, handleRegionCommand, handleMarketCommand, handleNewsCommand, handleEarningsCommand, handleWatchlistCommand, handleValuationCommand]) {
       const response = await handler(text, { env, context });
       if (response) return response;
     }

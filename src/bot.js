@@ -83,11 +83,19 @@ async function handleUpdate(update) {
       userId,
       loading: (messageText) => telegram.send(chatId, messageText),
     });
-    await telegram.send(chatId, response);
+    await sendCommandResponse(chatId, response);
   } catch (error) {
     console.error("Command failed:", error.message);
     await telegram.send(chatId, safeUserError(error));
   }
+}
+
+async function sendCommandResponse(chatId, response) {
+  if (response?.type === "document") {
+    await telegram.sendDocument(chatId, response);
+    return;
+  }
+  await telegram.send(chatId, response);
 }
 
 function safeUserError(error) {
