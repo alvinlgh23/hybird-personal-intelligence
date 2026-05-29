@@ -48,7 +48,7 @@ export async function analyzeTicker(ticker, { env }) {
   const [quote, headlines, earnings, macro, full] = await Promise.all([
     fetchYahooQuote(symbol, symbol),
     getCompanyHeadlines(symbol, { env, limit: 3 }),
-    getTickerEarnings(symbol),
+    getTickerEarnings(symbol, { env }),
     getMarketSnapshot(),
     runValuation(symbol, { env, mode: "full" }),
   ]);

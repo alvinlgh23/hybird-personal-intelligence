@@ -100,7 +100,7 @@ async function sendCommandResponse(chatId, response) {
 
 function safeUserError(error) {
   const message = error?.message || "";
-  const safePrefixes = ["Missing Gmail config", "Gmail is not connected", "Gmail not connected in cloud", "Missing dependency", "Invalid ticker"];
+  const safePrefixes = ["Missing Gmail config", "Gmail is not connected", "Gmail not connected in cloud", "Missing dependency", "Invalid ticker", "Local Mac agent"];
   if (safePrefixes.some((prefix) => message.startsWith(prefix))) return message;
   return "Something went wrong while handling that request. Try again in a moment.";
 }

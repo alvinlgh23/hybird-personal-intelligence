@@ -47,6 +47,11 @@ const server = createServer(async (req, res) => {
   }
 });
 
+server.on("error", (error) => {
+  console.error(`Local Mac agent failed to listen on ${host}:${port}: ${safeError(error)}`);
+  process.exit(1);
+});
+
 server.listen(port, host, () => {
   console.log(`Local Mac agent listening on http://${host}:${port}`);
 });

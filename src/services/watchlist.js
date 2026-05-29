@@ -39,7 +39,7 @@ export async function buildWatchlistBrief(env) {
   const [quotes, headlineGroups, earnings] = await Promise.all([
     getQuotes(tickers),
     Promise.all(tickers.slice(0, 8).map((ticker) => getCompanyHeadlines(ticker, { env, limit: 1 }))),
-    Promise.all(tickers.slice(0, 8).map((ticker) => getTickerEarnings(ticker))),
+    Promise.all(tickers.slice(0, 8).map((ticker) => getTickerEarnings(ticker, { env }))),
   ]);
   const valuations = includeValuation
     ? await Promise.all(tickers.slice(0, 5).map((ticker) => runValuation(ticker, { env, mode: "value" }).catch(() => null)))

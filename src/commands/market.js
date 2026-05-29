@@ -33,7 +33,7 @@ export async function handleMarketCommand(text, { env, context }) {
     const [market, headlines, earnings] = await Promise.all([
       getMarketSnapshot(),
       getMarketMovingHeadlines({ env, limit: 6 }),
-      getEarningsOverview(),
+      getEarningsOverview({ env }),
     ]);
     return summarizeMarketQuestion(question, { market, headlines, earnings, watchlist: getWatchlist(env) }, { env });
   }

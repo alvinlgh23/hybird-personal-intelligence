@@ -49,8 +49,15 @@ async function findFiles({ roots, query, limit }) {
 }
 
 async function sendFile({ roots, query }) {
-  const found = await findFiles({ roots, query, limit: 1 });
-  const file = found.items[0];
+  const found = await findFiles({ roots, query, limit: 20 });
+  let file = null;
+  for (const item of found.items) {
+    const info = await stat(item.path).catch(() => null);
+    if (info?.isFile()) {
+      file = item;
+      break;
+    }
+  }
   if (!file) return { error: "No matching file found." };
   const info = await stat(file.path);
   if (!info.isFile()) return { error: "Match is not a file." };

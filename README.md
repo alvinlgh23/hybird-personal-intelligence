@@ -39,6 +39,8 @@ Cloud-safe:
 - `/news` - short market-moving signals (`/news deep` for research note)
 - `/earnings`
 - `/earnings <ticker>`
+- `/earnings today`
+- `/earnings upcoming`
 - `/watchlist`
 - `/watchlist add <ticker>`
 - `/watchlist remove <ticker>`
@@ -90,6 +92,8 @@ LOCAL_AGENT_TIMEOUT_MS=12000
 GEMINI_MODEL=gemini-2.5-flash
 OPENAI_API_KEY=
 OPENAI_MODEL=
+FMP_API_KEY=
+ALPHA_VANTAGE_API_KEY=
 
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -128,6 +132,8 @@ GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
 OPENAI_API_KEY=
 OPENAI_MODEL=
+FMP_API_KEY=
+ALPHA_VANTAGE_API_KEY=
 
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -414,6 +420,8 @@ Optional:
 - `OPENAI_API_KEY`
 - `GEMINI_MODEL` (defaults to `gemini-2.5-flash`)
 - `OPENAI_MODEL`
+- `FMP_API_KEY` for structured earnings calendar and estimates
+- `ALPHA_VANTAGE_API_KEY` for historical reported EPS fallback
 - `GMAIL_TOKEN_JSON` for Gmail in Railway
 - `MODEL_RUNNER_MODE=cloud` and `VALUATION_MODEL_PATH=models/valuation/runner.py` for `/deepbrief` model intelligence
 
