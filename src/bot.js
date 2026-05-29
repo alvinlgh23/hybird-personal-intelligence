@@ -20,7 +20,7 @@ const allowedUserIds = new Set(
 
 const agentMode = env.AGENT_MODE || "local";
 const telegramMode = env.TELEGRAM_MODE || "polling";
-const telegram = createTelegramService({ token });
+const telegram = createTelegramService({ token, log: console });
 const handleCommand = createCommandHandler({ env });
 
 console.log(`Hybrid Intelligence OS starting in ${agentMode}/${telegramMode} mode.`);

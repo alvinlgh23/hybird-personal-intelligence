@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
-const TELEGRAM_LIMIT = 2800;
+const TELEGRAM_LIMIT = 2400;
+const FALLBACK_LIMIT = 1800;
 
-export function createTelegramService({ token }) {
+export function createTelegramService({ token, log = console } = {}) {
   async function call(method, payload = {}) {
     const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
       method: "POST",
@@ -15,16 +16,31 @@ export function createTelegramService({ token }) {
   }
 
   async function send(chatId, text) {
-    const chunks = splitTelegramMessage(String(text || ""));
+    const rendered = renderTelegramText(text);
+    const chunks = splitTelegramMessage(rendered);
+    log.log(`Telegram send length=${rendered.length} chunks=${chunks.length}.`);
+
     let last = null;
-    for (const chunk of chunks) {
-      last = await call("sendMessage", {
-        chat_id: chatId,
-        text: chunk,
-        disable_web_page_preview: true,
-      });
+    for (const [index, chunk] of chunks.entries()) {
+      try {
+        last = await sendPlainTextChunk(chatId, chunk);
+      } catch (error) {
+        log.error(`Telegram sendMessage failed for chunk ${index + 1}/${chunks.length}: ${shortError(error)}. Retrying plain fallback.`);
+        const fallbackChunks = splitTelegramMessage(renderPlainFallback(chunk), FALLBACK_LIMIT);
+        for (const fallbackChunk of fallbackChunks) {
+          last = await sendPlainTextChunk(chatId, fallbackChunk);
+        }
+      }
     }
     return last;
+  }
+
+  function sendPlainTextChunk(chatId, text) {
+    return call("sendMessage", {
+      chat_id: chatId,
+      text,
+      disable_web_page_preview: true,
+    });
   }
 
   async function setWebhook(url) {
@@ -43,19 +59,94 @@ export function createTelegramService({ token }) {
 }
 
 export function splitTelegramMessage(text, limit = TELEGRAM_LIMIT) {
-  if (text.length <= limit) return [text];
+  const safeText = renderTelegramText(text);
+  if (safeText.length <= limit) return [safeText];
 
   const chunks = [];
-  let remaining = text;
+  for (const section of safeText.split(/\n{2,}/u)) {
+    const block = section.trim();
+    if (!block) continue;
+
+    if (!chunks.length) {
+      chunks.push("");
+    }
+
+    const candidate = chunks[chunks.length - 1] ? `${chunks[chunks.length - 1]}\n\n${block}` : block;
+    if (candidate.length <= limit) {
+      chunks[chunks.length - 1] = candidate;
+      continue;
+    }
+
+    if (chunks[chunks.length - 1]) chunks.push("");
+    for (const piece of splitOversizedBlock(block, limit)) {
+      if (!chunks[chunks.length - 1]) {
+        chunks[chunks.length - 1] = piece;
+      } else if (`${chunks[chunks.length - 1]}\n${piece}`.length <= limit) {
+        chunks[chunks.length - 1] = `${chunks[chunks.length - 1]}\n${piece}`;
+      } else {
+        chunks.push(piece);
+      }
+    }
+  }
+
+  return chunks.map((chunk) => chunk.trim()).filter(Boolean);
+}
+
+export function renderTelegramText(value) {
+  return stripMarkdownSyntax(String(value || ""))
+    .replace(/\r\n?/gu, "\n")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/gu, "")
+    .replace(/[ \t]+\n/gu, "\n")
+    .replace(/\n{4,}/gu, "\n\n")
+    .trim();
+}
+
+function renderPlainFallback(value) {
+  return renderTelegramText(value)
+    .replace(/[\\*_`[\]()~>#+\-=|{}.!]/gu, "")
+    .replace(/[ \t]{2,}/gu, " ")
+    .trim();
+}
+
+function stripMarkdownSyntax(value) {
+  return value
+    .replace(/\*\*([^*\n]+)\*\*/gu, "$1")
+    .replace(/__([^_\n]+)__/gu, "$1")
+    .replace(/\*([^*\n]+)\*/gu, "$1")
+    .replace(/_([^_\n]+)_/gu, "$1")
+    .replace(/`([^`\n]+)`/gu, "$1")
+    .replace(/\[([^\]\n]+)\]\(([^)\n]+)\)/gu, "$1 ($2)");
+}
+
+function splitOversizedBlock(block, limit) {
+  const pieces = [];
+  for (const line of block.split("\n")) {
+    if (line.length <= limit) {
+      pieces.push(line);
+      continue;
+    }
+    pieces.push(...splitLongLine(line, limit));
+  }
+  return pieces;
+}
+
+function splitLongLine(line, limit) {
+  const pieces = [];
+  let remaining = line.trim();
   while (remaining.length > limit) {
     const window = remaining.slice(0, limit);
-    const splitAt = Math.max(window.lastIndexOf("\n\n"), window.lastIndexOf("\n"), window.lastIndexOf(". "));
-    const size = splitAt > limit * 0.55 ? splitAt : limit;
-    chunks.push(remaining.slice(0, size).trim());
+    const splitAt = Math.max(window.lastIndexOf(". "), window.lastIndexOf("; "), window.lastIndexOf(", "), window.lastIndexOf(" "));
+    const size = splitAt > limit * 0.45 ? splitAt + 1 : limit;
+    pieces.push(remaining.slice(0, size).trim());
     remaining = remaining.slice(size).trim();
   }
-  if (remaining) chunks.push(remaining);
-  return chunks;
+  if (remaining) pieces.push(remaining);
+  return pieces;
+}
+
+function shortError(error) {
+  const message = String(error?.message || "send failed").replace(/\s+/gu, " ").trim();
+  return message.length > 160 ? `${message.slice(0, 160)}...` : message;
 }
 
 export function startWebhookServer({ port, telegram, publicUrl, handleUpdate, log = console }) {
