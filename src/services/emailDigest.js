@@ -1,16 +1,5 @@
 import { generateDigest } from "../ai/router.js";
 
-const CATEGORIES = [
-  "Immediate Attention",
-  "Important / Strategic",
-  "Security",
-  "Infrastructure / Deployment",
-  "Finance / Banking",
-  "Personal",
-  "Promotions / Noise",
-  "Ignore",
-];
-
 export async function buildEmailDigest(emails, { env }) {
   if (!emails.length) return "Inbox Intelligence\n\nNo unread Gmail messages.";
 
@@ -22,14 +11,15 @@ export async function buildEmailDigest(emails, { env }) {
   }));
 
   const prompt = [
-    "Create an AI inbox intelligence triage for Telegram.",
+    "Create a compressed AI inbox intelligence triage for Telegram mobile.",
     "Use only the provided Gmail metadata/snippets. Never invent email contents. If confidence is low, say so.",
-    "Categorize emails into: Immediate Attention, Important / Strategic, Security, Infrastructure / Deployment, Finance / Banking, Personal, Promotions / Noise, Ignore.",
-    "For important emails summarize: what happened, why it matters, whether action is needed, urgency level HIGH/MEDIUM/LOW/IGNORE, and likely context.",
-    "Compress low-signal promotions/newsletters/discounts/marketing/spam-like items under 'Suppressed low-signal emails' instead of listing each one.",
+    "Classify into: ACTION NEEDED, SECURITY, FINANCE, INFRASTRUCTURE / DEVOPS, PERSONAL, NOISE FILTERED.",
+    "Only summarize high-signal emails by default. Do not list promotions/newsletters/discounts individually.",
+    "For each shown email use: subject, one-line implication, priority HIGH/MEDIUM/LOW, and suggested next action.",
+    "Compress low-signal promotions/newsletters/discounts/marketing/spam-like items under 'NOISE FILTERED'.",
     "Prioritize deployment failures, build failures, security alerts, banking, investment, university/admin, and account issues.",
-    "Add 'AI observations / pattern detection' and 'Suggested next actions'.",
-    "Keep concise, section-based, and mobile-readable.",
+    "Add 'PATTERN DETECTION' and 'NEXT ACTIONS'.",
+    "Keep concise, section-based, and readable in under 30 seconds.",
     "",
     "Input:",
     JSON.stringify(compact, null, 2),
@@ -40,40 +30,34 @@ export async function buildEmailDigest(emails, { env }) {
 
 function fallbackInboxIntelligence(emails) {
   const classified = emails.map(classifyEmail);
-  const important = classified.filter((item) => !["Promotions / Noise", "Ignore"].includes(item.category));
+  const important = classified.filter((item) => !["Promotions / Noise", "Ignore"].includes(item.category) && item.priority !== "LOW");
   const suppressed = classified.filter((item) => ["Promotions / Noise", "Ignore"].includes(item.category));
 
   return [
     "Inbox Intelligence",
     "",
-    ...CATEGORIES.map((category) => formatCategory(category, important.filter((item) => item.category === category))).filter(Boolean),
-    suppressed.length ? `Suppressed low-signal emails\n${suppressed.length} promotional/noise emails suppressed.` : "",
+    formatActionSection("ACTION NEEDED", important.filter((item) => ["Immediate Attention", "Important / Strategic"].includes(item.category))),
+    formatActionSection("SECURITY", important.filter((item) => item.category === "Security")),
+    formatActionSection("FINANCE", important.filter((item) => item.category === "Finance / Banking")),
+    formatActionSection("INFRASTRUCTURE / DEVOPS", important.filter((item) => item.category === "Infrastructure / Deployment")),
+    formatActionSection("PERSONAL", important.filter((item) => item.category === "Personal")),
+    suppressed.length ? `NOISE FILTERED\n- ${suppressed.length} low-signal promotional/newsletter emails hidden.` : "",
     "",
-    "AI observations / pattern detection",
+    "PATTERN DETECTION",
     observations(classified),
     "",
-    "Suggested next actions",
+    "NEXT ACTIONS",
     suggestedActions(classified),
   ]
     .filter(Boolean)
     .join("\n\n");
 }
 
-function formatCategory(category, items) {
+function formatActionSection(title, items) {
   if (!items.length) return "";
   return [
-    category,
-    ...items.slice(0, 5).map((item) =>
-      [
-        `- ${item.subject}`,
-        `  From: ${item.sender || "unknown"}`,
-        `  Priority: ${item.priority}`,
-        `  What happened: ${item.summary}`,
-        `  Why it matters: ${item.why}`,
-        `  Action needed: ${item.action}`,
-        `  Likely context: ${item.context}`,
-      ].join("\n"),
-    ),
+    title,
+    ...items.slice(0, 4).map((item) => [`- ${item.subject}`, `→ ${item.why}`, `Priority: ${item.priority}`, `Next: ${item.action}`].join("\n")),
   ].join("\n");
 }
 

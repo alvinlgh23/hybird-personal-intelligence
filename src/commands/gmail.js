@@ -42,6 +42,11 @@ export async function handleGmailCommand(text, { env, context }) {
     return formatUnreadEmails(await listUnreadEmails({ env, limit: 10 }));
   }
 
+  if (/^\/gmail(@\w+)?\s+all\b/iu.test(text)) {
+    await context.loading("Reading full unread Gmail inbox...");
+    return formatUnreadEmails(await listUnreadEmails({ env, limit: 25 }));
+  }
+
   if (text.startsWith("/gmail")) {
     await context.loading("Building inbox intelligence...");
     return buildEmailDigest(await listUnreadEmails({ env, limit: 20 }), { env });

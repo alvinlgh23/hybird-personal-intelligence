@@ -1,5 +1,6 @@
 import { generateSummary } from "../ai/router.js";
 import { safeFetchText } from "../utils/fetch.js";
+import { addSourceConfidence, credibilityAdjustedScore } from "./sourceCredibility.js";
 
 const DEFAULT_FEEDS = [
   "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
@@ -50,11 +51,33 @@ export function formatMarketMovingHeadlines(items) {
     ...items.map((item) =>
       [
         `${item.category}: ${item.title}`,
-        `Source: ${item.source || "RSS"}`,
-        `Relevance: ${item.relevanceScore ?? "n/a"}`,
+        `Source: ${item.source || "RSS"}${item.sourceCategory ? ` (${item.sourceCategory})` : ""}`,
+        `Signal: ${item.relevanceScore ?? "n/a"}/10`,
+        item.confidenceNote ? `Confidence: ${item.confidenceNote}` : "",
         `Why it matters: ${item.why}`,
-        `Market narrative impact: ${item.marketNarrativeImpact || "Watch whether this changes liquidity, earnings revisions, or leadership."}`,
+        `Main impact: ${item.marketNarrativeImpact || "Watch whether this changes liquidity, earnings revisions, or leadership."}`,
       ].join("\n"),
+    ),
+  ].join("\n\n");
+}
+
+export function formatShortMarketMovingHeadlines(items, { title = "Market-Moving Signals", limit = 5 } = {}) {
+  const selected = items.slice(0, limit);
+  if (!selected.length) return `${title}\n\nNo major high-signal developments found.`;
+  return [
+    title,
+    "",
+    ...selected.map((item, index) =>
+      [
+        `${index + 1}. ${item.title}`,
+        `Source: ${item.source || "RSS"}${item.sourceCategory ? ` (${item.sourceCategory})` : ""}`,
+        `→ Why it matters: ${compressBySignal(item.why, item.relevanceScore)}`,
+        `→ Main impact: ${compressBySignal(item.marketNarrativeImpact || "Watch liquidity, earnings revisions, and leadership.", item.relevanceScore)}`,
+        item.confidenceNote ? `Confidence: ${item.confidenceNote}` : "",
+        `Signal: ${item.relevanceScore ?? "n/a"}/10`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
     ),
   ].join("\n\n");
 }
@@ -113,7 +136,8 @@ function categorizeHeadlines(headlines) {
 }
 
 export function filterHighSignalNews(items) {
-  return items
+  return addSourceConfidence(items)
+    .map((item) => ({ ...item, relevanceScore: credibilityAdjustedScore(item.relevanceScore, item, item.confirmationCount) }))
     .filter(isMarketRelevant)
     .sort((a, b) => b.relevanceScore - a.relevanceScore || String(b.published || "").localeCompare(String(a.published || "")));
 }
@@ -156,6 +180,14 @@ function isMarketRelevant(item) {
   if (/(coffee|cocoa|gold|settle|settlement|minor|recap)/u.test(title)) return false;
   if (/tariff/u.test(title)) return /(china|trade war|inflation|supply chain|semiconductor|autos|market|stocks)/u.test(title);
   return item.relevanceScore >= 2;
+}
+
+function compressBySignal(text, score = 0) {
+  const value = String(text || "").replace(/\s+/gu, " ").trim();
+  if (score >= 8) return value;
+  const sentences = value.split(/(?<=[.!?])\s+/u).filter(Boolean);
+  if (score >= 5) return sentences.slice(0, 1).join(" ") || value.slice(0, 150);
+  return (sentences[0] || value).slice(0, 110);
 }
 
 function companyAliases(ticker) {

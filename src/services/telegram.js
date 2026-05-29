@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-const TELEGRAM_LIMIT = 3900;
+const TELEGRAM_LIMIT = 2800;
 
 export function createTelegramService({ token }) {
   async function call(method, payload = {}) {

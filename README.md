@@ -14,7 +14,8 @@ No large frameworks are used. The app is Node.js ESM, the Gmail integration uses
 Cloud-safe:
 
 - `/health`
-- `/gmail` - AI inbox intelligence
+- `/gmail` - high-signal AI inbox intelligence
+- `/gmail all` - raw unread Gmail dump
 - `/gmail_raw` - raw unread Gmail list
 - `/gmail_status`
 - `/gmail_reconnect`
@@ -24,18 +25,18 @@ Cloud-safe:
 - `/digest`
 - `/morning` - fast morning dashboard
 - `/deepbrief` - institutional deep research note
-- `/jp` - Japan news intelligence
-- `/kr` - Korea news intelligence
-- `/sg` - Singapore news intelligence
-- `/eu` - Europe news intelligence
-- `/us` - United States news intelligence
-- `/cn` - China news intelligence
-- `/asean` - ASEAN regional news intelligence
+- `/jp` - Japan top 3 signals (`/jp synth`, `/jp 1`, `/jp deep`)
+- `/kr` - Korea top 3 signals (`/kr synth`, `/kr 1`, `/kr deep`)
+- `/sg` - Singapore top 3 signals (`/sg synth`, `/sg 1`, `/sg deep`)
+- `/eu` - Europe top 3 signals (`/eu synth`, `/eu 1`, `/eu deep`)
+- `/us` - United States top 3 signals (`/us synth`, `/us 1`, `/us deep`)
+- `/cn` - China top 3 signals (`/cn synth`, `/cn 1`, `/cn deep`)
+- `/asean` - ASEAN top 3 signals (`/asean synth`, `/asean 1`, `/asean deep`)
 - `/brief`
 - `/market`
 - `/macro`
 - `/eth`
-- `/news`
+- `/news` - short market-moving signals (`/news deep` for research note)
 - `/earnings`
 - `/earnings <ticker>`
 - `/watchlist`
@@ -141,12 +142,17 @@ Then test:
 ```text
 /health
 /gmail
+/gmail all
 /gmail_raw
 /gmail_status
 /digest
 /market
 /news
+/news deep
 /jp
+/jp synth
+/jp deep
+/jp 1
 /kr
 /sg
 /eu
@@ -159,6 +165,8 @@ Then test:
 /deepbrief
 /chrome
 ```
+
+Regional commands are mobile-first by default: max 3 signal-weighted items with source attribution, source credibility, one AI insight, and a signal score. They do not include synthesis by default. Use `/jp synth` for regional narrative synthesis, `/jp 1` to expand a single item, or `/jp deep` for the longer institutional report.
 
 ## Railway Cloud Run
 

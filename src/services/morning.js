@@ -4,7 +4,7 @@ import { buildEmailDigest } from "./emailDigest.js";
 import { getEarningsOverview, formatEarningsOverview } from "./earnings.js";
 import { listUnreadEmails } from "./gmail.js";
 import { fetchYahooQuote, getMarketSnapshot, getQuotes, inferMarketRegime } from "./marketData.js";
-import { formatMarketMovingHeadlines, getMarketMovingHeadlines } from "./news.js";
+import { getMarketMovingHeadlines } from "./news.js";
 import { runValuation, valuationAvailable } from "./valuation.js";
 import { buildWatchlistBrief } from "./watchlist.js";
 
@@ -15,27 +15,27 @@ export async function buildMorningDigest({ env }) {
   const context = await loadMorningContext(env, { includeModel: false });
   const fallback = buildMorningFallback(context);
   const prompt = [
-    "Write a fast, high-signal morning dashboard for Telegram. Optimize for a 30-60 second read right after waking up.",
-    "Answer: what happened overnight, what earnings/news matter, and what should I watch today?",
-    "Do not write a long macro essay. Use crisp sections, tight bullets, and every item must answer 'so what?'.",
+    "Write a compressed signal-first morning dashboard for Telegram mobile. Target 30-90 seconds of reading.",
+    "Answer: what happened overnight, what the market is pricing, what matters today, and whether Gmail has action items.",
+    "Do not write a macro essay. No giant paragraphs. No generic risk-on/risk-off label unless explained.",
     "Use exactly these section headers:",
-    "1. OVERNIGHT HEADLINES THAT MATTER",
-    "2. EARNINGS RADAR",
-    "3. MARKET SNAPSHOT",
-    "4. TODAY'S FOCUS",
-    "5. PERSONAL / GMAIL",
-    "For each headline include: Headline, Source, Why it matters, Market narrative impact.",
-    "Use only high-relevance headlines affecting Fed/rates, inflation, AI/semiconductors, mega-cap tech, crypto, China/geopolitics, energy shock, major earnings, or liquidity.",
-    "For earnings, include reported/upcoming, reaction if available, and narrative impact. Focus on NVDA, MSFT, AAPL, AMZN, GOOGL, META, TSLA, PLTR, MU, TSM, AMD, AVGO, CRM, SNOW, COST, DELL.",
-    "For market snapshot, include key numbers but add 3-5 sentences on what the market is pricing, whether the move is broad or narrow, and what confirms/invalidates it.",
-    "Avoid generic finance filler and unexplained risk-on/risk-off labels. No direct buy/sell advice.",
-    "Keep it concise and mobile-readable. Target 500-900 words max.",
+    "TOP 3 GLOBAL SIGNALS",
+    "MARKET REGIME",
+    "OVERNIGHT HEADLINES",
+    "WHAT ACTUALLY MATTERS TODAY",
+    "WATCHLIST",
+    "EMAIL INTELLIGENCE",
+    "For every headline include source name, source category if present, why it matters, main impact, and signal score.",
+    "Respect importance-weighted compression: signal >=8 can have more detail; 5-7 gets one tight sentence; below 5 should be skipped.",
+    "Mention source convergence when confidenceNote says multiple major sources are converging.",
+    "Use concrete transmission channels: yields to duration equities, DXY to crypto, semis to AI capex, oil to inflation, policy to capital flows.",
+    "Keep the full output under 900 words. No direct buy/sell advice.",
     "",
     "Input:",
     JSON.stringify(buildAiInput(context), null, 2),
   ].join("\n");
 
-  return generateDigest(prompt, { env, fallback, maxOutputTokens: 2600 });
+  return generateDigest(prompt, { env, fallback, maxOutputTokens: 1800 });
 }
 
 export async function buildDeepBrief({ env }) {
@@ -184,22 +184,28 @@ async function getModelOutput(env, structure) {
 
 function buildMorningFallback(context) {
   return [
-    "Morning Dashboard",
+    "Morning Intelligence Dashboard",
     "",
-    "1. OVERNIGHT HEADLINES THAT MATTER",
+    "TOP 3 GLOBAL SIGNALS",
+    topThreeThings(context)
+      .slice(0, 3)
+      .map((item, index) => `${index + 1}. ${item}`)
+      .join("\n"),
+    "",
+    "MARKET REGIME",
+    marketRegimeFallback(context),
+    "",
+    "OVERNIGHT HEADLINES",
     formatDashboardHeadlines(context.headlines),
     "",
-    "2. EARNINGS RADAR",
-    earningsRadarFallback(context.earnings.value, context.structure.value),
+    "WHAT ACTUALLY MATTERS TODAY",
+    whatActuallyMattersFallback(context),
     "",
-    "3. MARKET SNAPSHOT",
-    context.snapshot ? [marketSnapshotLines(context.snapshot, context.structure.value), "", morningMarketRead(context.snapshot, context.structure.value)].join("\n") : "Market data unavailable. Watch rates, DXY, breadth, and Nasdaq futures first.",
+    "WATCHLIST",
+    watchlistFallback(context),
     "",
-    "4. TODAY'S FOCUS",
-    todaysFocusFallback(context),
-    "",
-    "5. PERSONAL / GMAIL",
-    context.gmail.value,
+    "EMAIL INTELLIGENCE",
+    compressEmailSection(context.gmail.value),
     "",
     "Not financial advice.",
   ].join("\n\n");
@@ -267,16 +273,62 @@ function buildDeepBriefFallback(context) {
 function formatDashboardHeadlines(headlines) {
   if (!headlines.length) return "No high-signal overnight headlines found. Avoid over-reading generic market chatter.";
   return headlines
-    .slice(0, 4)
+    .slice(0, 5)
     .map((item) =>
       [
-        `Headline: ${item.title}`,
-        `Source: ${item.source || "RSS"}`,
-        `Why it matters: ${item.why}`,
-        `Market narrative impact: ${item.marketNarrativeImpact}`,
-      ].join("\n"),
+        `${item.title}`,
+        `Source: ${item.source || "RSS"}${item.sourceCategory ? ` (${item.sourceCategory})` : ""}`,
+        `→ Why it matters: ${compressSentence(item.why, item.relevanceScore)}`,
+        `→ Main impact: ${compressSentence(item.marketNarrativeImpact, item.relevanceScore)}`,
+        item.confidenceNote ? `Confidence: ${item.confidenceNote}` : "",
+        `Signal: ${item.relevanceScore ?? "n/a"}/10`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
     )
     .join("\n\n");
+}
+
+function marketRegimeFallback(context) {
+  if (!context.snapshot) return "Market data unavailable. Watch rates, DXY, Nasdaq futures, BTC/ETH, and VIX first.";
+  return [
+    `BTC: ${formatAsset(context.snapshot.crypto.btc)} | ETH: ${formatAsset(context.snapshot.crypto.eth)}`,
+    `DXY: ${formatQuote(context.snapshot.macro.dxy)} | US10Y: ${formatYield(context.snapshot.macro.us10y)} | Nasdaq: ${formatQuote(context.snapshot.macro.nasdaq)} | VIX: ${formatQuote(context.structure.value?.volatility)}`,
+    morningMarketRead(context.snapshot, context.structure.value),
+  ].join("\n");
+}
+
+function whatActuallyMattersFallback(context) {
+  const headline = context.headlines?.[0];
+  const regime = context.snapshot ? inferMarketRegime(context.snapshot) : null;
+  if (!headline && !regime) return "No dominant signal yet. Treat the open as confirmation-seeking: rates, dollar, breadth, semis, and crypto decide whether risk appetite is real.";
+  return [
+    headline ? `${headline.title} is the narrative test: ${compressSentence(headline.marketNarrativeImpact, headline.relevanceScore)}` : "",
+    regime ? `The key transmission channel is ${regime.liquidity}: if yields or DXY reverse higher, long-duration AI equities and crypto beta lose support quickly.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function watchlistFallback(context) {
+  const movers = (context.structure.value?.focusQuotes || [])
+    .filter((item) => Number.isFinite(item.changePct))
+    .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))
+    .slice(0, 5);
+  if (!movers.length) return "Top movers unavailable. Watch AI leaders, semis, BTC/ETH, DXY, and US10Y.";
+  return movers.map((item) => `- ${item.symbol}: ${formatPct(item.changePct)} (${formatValue(item.price)})`).join("\n");
+}
+
+function compressEmailSection(text) {
+  const value = String(text || "").trim();
+  if (!value) return "No important unread Gmail messages.";
+  const lines = value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/promotions|suppressed low-signal|ignore/i.test(line))
+    .slice(0, 10);
+  return lines.length ? lines.join("\n") : "No high-signal unread Gmail messages.";
 }
 
 function earningsRadarFallback(earnings, structure) {
@@ -319,6 +371,13 @@ function morningMarketRead(snapshot, structure) {
     `Crypto is ${regime.cryptoSentiment}; if BTC/ETH keep fading while Nasdaq rallies, speculative liquidity is not fully confirming the equity move.`,
     "Confirmation comes from breadth, semis, lower volatility, and stable yields. Invalidation comes from a DXY/yield reversal, rising VIX, or mega-cap AI leadership fading.",
   ].join(" ");
+}
+
+function compressSentence(text, score = 0) {
+  const value = String(text || "Watch whether this changes liquidity, earnings revisions, leadership, or capital flows.").replace(/\s+/gu, " ").trim();
+  if (score >= 8) return value;
+  const sentence = value.split(/(?<=[.!?])\s+/u).filter(Boolean)[0] || value;
+  return score >= 5 ? sentence.slice(0, 170) : sentence.slice(0, 115);
 }
 
 function todaysFocusFallback(context) {
