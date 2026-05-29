@@ -3,13 +3,12 @@ export function renderRegionalBrief(region, items, { limit = 3, title } = {}) {
   return [title || `${region.flag || ""} ${region.name.toUpperCase()} BRIEF`.trim(), ...selected.map((item, index) => renderHeadline({ ...item, rank: index + 1 }))].join("\n\n");
 }
 
-export function renderMorningBrief({ date, dominantNarrative = "", signals = [], marketPulse = [], watch = [] }) {
-  const title = `🌍 Morning Intelligence Brief — ${date}`;
-  const signalLines = signals.slice(0, 3).map((item, index) => renderSignal({ ...item, rank: index + 1 }));
-  const narrative = dominantNarrative ? ["⚡ Dominant Narrative", oneLine(dominantNarrative, 300)].join("\n") : "";
+export function renderMorningBrief({ date, headlines = [], signals = [], marketPulse = [] }) {
+  const title = `🌍 Morning Headlines — ${date}`;
+  const items = headlines.length ? headlines : signals;
+  const signalLines = items.slice(0, 4).map((item, index) => renderSignal({ ...item, rank: index + 1 }));
   const pulse = marketPulse.length ? ["📊 Market Pulse", ...marketPulse].join("\n") : "";
-  const watchLines = watch.length ? ["👀 Watch Today", ...watch.slice(0, 7).map((item) => `* ${item}`)].join("\n") : "";
-  return [title, narrative, ...signalLines, pulse, watchLines].filter(Boolean).join("\n\n");
+  return [title, ...withSeparators(signalLines), pulse].filter(Boolean).join("\n\n");
 }
 
 export function renderHeadline(item) {
@@ -28,4 +27,8 @@ function oneLine(value, max = 220) {
   const text = String(value || "No concise intelligence read available.").replace(/\s+/gu, " ").trim();
   const sentence = text.split(/(?<=[.!?])\s+/u).filter(Boolean).slice(0, 2).join(" ") || text;
   return sentence.length > max ? `${sentence.slice(0, max - 3).trim()}...` : sentence;
+}
+
+function withSeparators(items) {
+  return items.flatMap((item, index) => (index < items.length - 1 ? [item, "—"] : [item]));
 }

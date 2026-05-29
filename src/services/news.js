@@ -4,6 +4,10 @@ import { addSourceConfidence, credibilityAdjustedScore } from "./sourceCredibili
 
 const DEFAULT_FEEDS = [
   "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+  "https://feeds.bbci.co.uk/news/world/rss.xml",
+  "https://feeds.bbci.co.uk/news/business/rss.xml",
+  "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml",
+  "https://www.japantimes.co.jp/feed/",
   "https://www.coindesk.com/arc/outboundfeeds/rss/",
   "https://feeds.reuters.com/reuters/businessNews",
 ];
@@ -52,16 +56,14 @@ export function formatMarketMovingHeadlines(items) {
       [
         `${item.category}: ${item.title}`,
         `Source: ${item.source || "RSS"}${item.sourceCategory ? ` (${item.sourceCategory})` : ""}`,
-        `Signal: ${item.relevanceScore ?? "n/a"}/10`,
         item.confidenceNote ? `Confidence: ${item.confidenceNote}` : "",
-        `Why it matters: ${item.why}`,
-        `Main impact: ${item.marketNarrativeImpact || "Watch whether this changes liquidity, earnings revisions, or leadership."}`,
+        `🧠 ${compactNewsInsight(item)}`,
       ].join("\n"),
     ),
   ].join("\n\n");
 }
 
-export function formatShortMarketMovingHeadlines(items, { title = "Market-Moving Signals", limit = 5 } = {}) {
+export function formatShortMarketMovingHeadlines(items, { title = "Market-Moving Headlines", limit = 5 } = {}) {
   const selected = items.slice(0, limit);
   if (!selected.length) return `${title}\n\nNo major high-signal developments found.`;
   return [
@@ -71,10 +73,8 @@ export function formatShortMarketMovingHeadlines(items, { title = "Market-Moving
       [
         `${index + 1}. ${item.title}`,
         `Source: ${item.source || "RSS"}${item.sourceCategory ? ` (${item.sourceCategory})` : ""}`,
-        `→ Why it matters: ${compressBySignal(item.why, item.relevanceScore)}`,
-        `→ Main impact: ${compressBySignal(item.marketNarrativeImpact || "Watch liquidity, earnings revisions, and leadership.", item.relevanceScore)}`,
+        `🧠 ${compactNewsInsight(item)}`,
         item.confidenceNote ? `Confidence: ${item.confidenceNote}` : "",
-        `Signal: ${item.relevanceScore ?? "n/a"}/10`,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -87,10 +87,10 @@ export function summarizeMarketMovingHeadlines(items, { env }) {
   if (!items.length) return fallback;
 
   const prompt = [
-    "Create a concise market-moving news research note for Telegram.",
-    "Group the supplied headlines into themes and explain why they matter for macro, liquidity, valuation, momentum, and risk appetite.",
-    "Use these sections: Executive summary, Key catalysts, Key risks, What to watch next, Final interpretation.",
-    "Do not give direct buy/sell advice. End with: Not financial advice.",
+    "Create a concise market-moving headline brief for Telegram.",
+    "Use only the supplied headlines. Act as an editor: compress, rank, and lightly contextualize.",
+    "For each item use: headline, source, one short intelligence read.",
+    "Avoid long sections, signal scores, confidence scores, and generic macro filler.",
     "",
     "Input:",
     JSON.stringify(items, null, 2),
@@ -188,6 +188,11 @@ function compressBySignal(text, score = 0) {
   const sentences = value.split(/(?<=[.!?])\s+/u).filter(Boolean);
   if (score >= 5) return sentences.slice(0, 1).join(" ") || value.slice(0, 150);
   return (sentences[0] || value).slice(0, 110);
+}
+
+function compactNewsInsight(item) {
+  const text = item.marketNarrativeImpact || item.why || "Track only if it changes policy, liquidity, earnings, or leadership.";
+  return compressBySignal(text, item.relevanceScore);
 }
 
 function companyAliases(ticker) {

@@ -9,6 +9,9 @@ const HIGH_CREDIBILITY = [
   ["nikkei", "Nikkei"],
   ["apnews", "AP"],
   ["associated press", "AP"],
+  ["channelnewsasia", "CNA"],
+  ["bbc", "BBC"],
+  ["japantimes", "Japan Times"],
 ];
 
 const MEDIUM_CREDIBILITY = [
