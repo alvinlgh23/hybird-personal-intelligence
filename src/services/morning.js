@@ -2,6 +2,7 @@ import { generateDeepBrief } from "../ai/router.js";
 import { formatPct, formatValue } from "../utils/format.js";
 import { buildEmailDigest } from "./emailDigest.js";
 import { getEarningsOverview, formatEarningsOverview } from "./earnings.js";
+import { buildUpcomingCatalysts } from "./catalysts.js";
 import { listUnreadEmails } from "./gmail.js";
 import { fetchYahooQuote, getMarketSnapshot, getQuotes, inferMarketRegime } from "./marketData.js";
 import { getMarketMovingHeadlines } from "./news.js";
@@ -166,6 +167,7 @@ function buildMorningTerminal(context) {
     date: compactDate(),
     headlines: rankMorningHeadlines(context),
     marketPulse: marketPulseLines(context),
+    catalysts: buildUpcomingCatalysts({ earnings: context.earnings, headlines: context.headlines, includeFallback: true }),
   });
 }
 

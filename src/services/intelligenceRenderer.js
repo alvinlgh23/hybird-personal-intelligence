@@ -1,14 +1,15 @@
-export function renderRegionalBrief(region, items, { limit = 3, title } = {}) {
+export function renderRegionalBrief(region, items, { limit = 3, title, catalysts = null, emptyText = "" } = {}) {
   const selected = items.slice(0, limit);
-  return [title || `${region.flag || ""} ${region.name.toUpperCase()} BRIEF`.trim(), ...selected.map((item, index) => renderHeadline({ ...item, rank: index + 1 }))].join("\n\n");
+  const body = selected.length ? selected.map((item, index) => renderHeadline({ ...item, rank: index + 1 })) : [emptyText];
+  return [title || `${region.flag || ""} ${region.name.toUpperCase()} BRIEF`.trim(), ...body, renderCatalysts(catalysts)].filter(Boolean).join("\n\n");
 }
 
-export function renderMorningBrief({ date, headlines = [], signals = [], marketPulse = [] }) {
+export function renderMorningBrief({ date, headlines = [], signals = [], marketPulse = [], catalysts = null }) {
   const title = `🌍 Morning Headlines — ${date}`;
   const items = headlines.length ? headlines : signals;
   const signalLines = items.slice(0, 4).map((item, index) => renderSignal({ ...item, rank: index + 1 }));
   const pulse = marketPulse.length ? ["📊 Market Pulse", ...marketPulse].join("\n") : "";
-  return [title, ...withSeparators(signalLines), pulse].filter(Boolean).join("\n\n");
+  return [title, ...withSeparators(signalLines), pulse, renderCatalysts(catalysts)].filter(Boolean).join("\n\n");
 }
 
 export function renderHeadline(item) {
@@ -31,4 +32,17 @@ function oneLine(value, max = 220) {
 
 function withSeparators(items) {
   return items.flatMap((item, index) => (index < items.length - 1 ? [item, "—"] : [item]));
+}
+
+function renderCatalysts(catalysts) {
+  if (!catalysts) return "";
+  const today = (catalysts.today || []).slice(0, 4);
+  const week = (catalysts.week || []).slice(0, 6);
+  if (!today.length && !week.length && !catalysts.includeFallback) return "";
+
+  const lines = ["📅 Upcoming Catalysts"];
+  if (today.length) lines.push("", "Today", ...today.map((item) => `* ${item}`));
+  if (week.length) lines.push("", "This Week", ...week.map((item) => `* ${item}`));
+  if (!today.length && !week.length) lines.push("", "This Week", "* No high-impact scheduled catalysts from configured feeds");
+  return lines.join("\n");
 }

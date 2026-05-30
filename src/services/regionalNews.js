@@ -1,6 +1,7 @@
 import { analyzeRegionalItem, analyzeRegionalNews } from "../ai/regionalAnalyzer.js";
 import { safeFetchText } from "../utils/fetch.js";
 import { addSourceConfidence, credibilityAdjustedScore } from "./sourceCredibility.js";
+import { buildUpcomingCatalysts } from "./catalysts.js";
 import { renderRegionalBrief } from "./intelligenceRenderer.js";
 
 const REGION_CONFIG = {
@@ -79,14 +80,21 @@ export async function buildRegionalNewsBrief(command, { env, limit = 3, deep = f
   }
 
   const selected = ranked.slice(0, Math.min(deep ? 10 : synth ? 5 : limit, 10));
-  if (!selected.length) return `${region.name} News Intelligence Brief\n\nNo major high-signal regional developments found.`;
+  const catalysts = buildUpcomingCatalysts({ headlines: selected, regionKey: key, includeFallback: true });
+  if (!selected.length) {
+    return renderRegionalBrief(region, [], {
+      title: `${region.name} News Intelligence Brief`,
+      emptyText: "No major high-signal regional developments found.",
+      catalysts,
+    });
+  }
 
   if (synth) return [`${region.name} Synthesis`, "", await analyzeRegionalNews(region, selected, { env, deep: false })].join("\n");
 
-  if (!deep) return renderRegionalBrief(region, selected);
+  if (!deep) return renderRegionalBrief(region, selected, { catalysts });
 
   const synthesis = await analyzeRegionalNews(region, selected, { env, deep });
-  return [renderRegionalBrief(region, selected, { limit: 10, title: `${region.flag || ""} ${region.name.toUpperCase()} DEEP BRIEF`.trim() }), "", synthesis].join("\n\n");
+  return [renderRegionalBrief(region, selected, { limit: 10, title: `${region.flag || ""} ${region.name.toUpperCase()} DEEP BRIEF`.trim(), catalysts }), "", synthesis].join("\n\n");
 }
 
 export function filterHighSignalRegionalNews(items, region) {
