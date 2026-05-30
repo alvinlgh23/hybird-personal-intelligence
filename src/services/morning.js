@@ -7,7 +7,7 @@ import { listUnreadEmails } from "./gmail.js";
 import { fetchYahooQuote, getMarketSnapshot, getQuotes, inferMarketRegime } from "./marketData.js";
 import { getMarketMovingHeadlines } from "./news.js";
 import { renderMorningBrief } from "./intelligenceRenderer.js";
-import { curateDiverseItems, inferNarrativeTheme } from "./intelligenceCuration.js";
+import { buildTopicInsight, classifyIntelligenceTopic, curateDiverseItems } from "./intelligenceCuration.js";
 import { runValuation, valuationAvailable } from "./valuation.js";
 import { buildWatchlistBrief } from "./watchlist.js";
 
@@ -181,7 +181,6 @@ function buildMorningTerminal(context, env) {
 function catalystSourceAvailable(context) {
   const status = context.earnings.value?.providerStatus;
   return Boolean(
-      (context.headlines || []).length ||
       (context.earnings.value?.reportingToday || []).length ||
       (context.earnings.value?.upcoming || []).length ||
       (status?.calendarActive && status.calendarActive !== "unavailable"),
@@ -192,8 +191,8 @@ function rankMorningHeadlines(context) {
   const realHeadlines = (context.headlines || []).slice(0, 6).map((item) => ({
     title: cleanHeadline(item.title),
     source: sourceLabel(item),
-    aiInsight: morningHeadlineInsight(item),
-    theme: inferNarrativeTheme(item),
+    topic: classifyIntelligenceTopic(item),
+    aiInsight: buildTopicInsight(item),
     published: item.published,
     sourceTier: item.sourceTier,
     priority: clampPriority(item.relevanceScore || 6),
@@ -223,12 +222,12 @@ function liquidityHeadline(context) {
   return {
     title: easing ? `${dxyText}; ${yieldText} as liquidity pressure eases` : tightening ? `${dxyText}; ${yieldText} as dollar/yield pressure firms` : `${dxyText}; ${yieldText} leaves liquidity signal mixed`,
     source: "Market data",
-    theme: "Liquidity / rates",
+    topic: "Liquidity",
     aiInsight: easing
-      ? "Liquidity conditions still support growth and AI-heavy positioning if breadth holds."
+      ? "The rates/liquidity channel is easing; watch whether duration leadership broadens beyond a few mega-cap names."
       : tightening
-        ? "Higher yields or dollar strength would pressure duration equities, credit, and crypto beta."
-        : "Markets need confirmation from DXY and US10Y before treating the tape as broad risk appetite.",
+        ? "Higher yields or dollar strength would tighten financial conditions and pressure duration-sensitive equities."
+        : "The tape needs confirmation from DXY and US10Y before calling liquidity supportive.",
     priority: tightening || easing ? 8 : 6,
   };
 }
@@ -242,12 +241,12 @@ function aiInfrastructureHeadline(context) {
   return {
     title: `Semis ${shortPct(semis?.changePct)} versus Nasdaq ${shortPct(nasdaq?.changePct)}`,
     source: "Semis / Nasdaq market structure",
-    theme: "AI / semis",
+    topic: "Semiconductors",
     aiInsight: weak
       ? "If chips lag while indexes hold, leadership quality is weakening under the surface."
       : strong
-        ? "Investors are still paying for compute, chips, and data-center capex durability."
-        : "The tape needs chip follow-through to keep the AI trade from narrowing into mega-cap defensiveness.",
+        ? "Chip leadership is still carrying the AI infrastructure trade."
+        : "The tape needs semiconductor confirmation before treating AI leadership as durable.",
     priority: strong || weak ? 8 : 7,
   };
 }
@@ -261,12 +260,12 @@ function cryptoHeadline(context) {
   return {
     title: `BTC ${shortPct(btc?.changePct)} and ETH ${shortPct(eth?.changePct)} set the crypto read`,
     source: "BTC / ETH market structure",
-    theme: "Crypto",
+    topic: "Crypto",
     aiInsight: weak
-      ? "Risk appetite remains selective rather than fully broad-based."
+      ? "Speculative liquidity is not confirming the broader equity tape."
       : strong
         ? "Speculative liquidity is broadening beyond mega-cap equities."
-        : "Equity strength needs crypto follow-through before calling the move broad risk appetite.",
+        : "Crypto is not giving a strong confirmation signal for risk appetite.",
     priority: weak || strong ? 7 : 6,
   };
 }
@@ -279,21 +278,10 @@ function earningsHeadline(context) {
   return {
     title: `${item.ticker} keeps earnings risk on today's tape`,
     source: "Earnings calendar",
-    theme: "Earnings",
-    aiInsight: "Guidance quality matters more than the headline print, especially around AI capex, margins, and forward demand.",
+    topic: "Markets",
+    aiInsight: "The desk read is guidance, margins, and forward demand, not the headline EPS print.",
     priority: today.length ? 7 : 6,
   };
-}
-
-function morningHeadlineInsight(item) {
-  const text = `${item.title || ""} ${item.category || ""}`.toLowerCase();
-  if (/(ai|semiconductor|chip|nvidia|data center|datacenter|gpu)/u.test(text)) return "Keeps AI compute demand, supply chains, and capex durability in focus.";
-  if (/(fed|yield|rate|treasury|inflation|cpi|pce|powell)/u.test(text)) return "Keeps the rates channel central for growth equities, credit, and crypto.";
-  if (/(china|taiwan|war|sanction|defense|geopolitic|tariff)/u.test(text)) return "Raises read-through for supply chains, sanctions, defense alignment, or regional risk premia.";
-  if (/(oil|energy|opec|crude|gas)/u.test(text)) return "Energy moves matter if they start feeding inflation expectations or margin pressure.";
-  if (/(bitcoin|crypto|ethereum|stablecoin|etf)/u.test(text)) return "Shows whether speculative liquidity is broadening beyond equities.";
-  if (/(earnings|guidance|margin|revenue|capex)/u.test(text)) return "Guidance and margins matter more than the headline print.";
-  return compactInsight(item.marketNarrativeImpact || item.why || "Worth tracking only if it changes policy, capital flows, or sector leadership.");
 }
 
 function marketPulseLines(context) {
@@ -322,12 +310,6 @@ function sourceLabel(item) {
   return item.sourceCategory ? `${source} (${item.sourceCategory})` : source;
 }
 
-function compactInsight(value) {
-  const text = String(value || "").replace(/\s+/gu, " ").trim();
-  const sentence = text.split(/(?<=[.!?])\s+/u).filter(Boolean)[0] || text;
-  return sentence.length > 150 ? `${sentence.slice(0, 147).trim()}...` : sentence;
-}
-
 function clampPriority(value) {
   const score = Math.round(Number(value) || 6);
   return Math.max(6, Math.min(10, score));
@@ -354,6 +336,7 @@ function fallbackHeadlines() {
     {
       title: "No high-signal overnight headlines from configured feeds",
       source: "System",
+      topic: "Markets",
       aiInsight: "Use market pulse as the fallback read until Reuters, WSJ, Nikkei, CNA, or other feeds return fresh items.",
       priority: 6,
     },

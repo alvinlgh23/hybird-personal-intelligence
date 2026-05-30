@@ -1,6 +1,7 @@
 import { generateSummary } from "../ai/router.js";
 import { safeFetchText } from "../utils/fetch.js";
 import { addSourceConfidence, credibilityAdjustedScore } from "./sourceCredibility.js";
+import { buildTopicInsight, classifyIntelligenceTopic, passesInstitutionalFilter } from "./intelligenceCuration.js";
 
 const DEFAULT_FEEDS = [
   "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
@@ -116,40 +117,43 @@ function categorizeHeadlines(headlines) {
   return headlines.map((item) => {
     const title = item.title.toLowerCase();
     const relevanceScore = scoreNewsItem(item);
+    const topic = classifyIntelligenceTopic(item);
     if (/(fed|rate|yield|inflation|treasury|powell)/u.test(title)) {
-      return withNarrative({ ...item, relevanceScore, category: "Fed / rates", why: "Rates shape liquidity, equity multiples, and crypto beta." });
+      return withNarrative({ ...item, relevanceScore, topic, category: "Fed / rates" });
     }
     if (/(\bai\b|nvidia|semiconductor|chip|amd|tsmc|avgo|micron|data center|datacenter)/u.test(title)) {
-      return withNarrative({ ...item, relevanceScore, category: "AI / semiconductors", why: "AI capex and chip demand drive mega-cap risk appetite." });
+      return withNarrative({ ...item, relevanceScore, topic, category: "AI / semiconductors" });
     }
     if (/(bitcoin|crypto|ethereum|eth|btc|etf|stablecoin)/u.test(title)) {
-      return withNarrative({ ...item, relevanceScore, category: "Crypto", why: "Crypto momentum reflects liquidity and speculative risk appetite." });
+      return withNarrative({ ...item, relevanceScore, topic, category: "Crypto" });
     }
     if (/(china|geopolitic|tariff|taiwan|war|sanction)/u.test(title)) {
-      return withNarrative({ ...item, relevanceScore, category: "China / geopolitics", why: "Geopolitical risk can hit supply chains and global beta." });
+      return withNarrative({ ...item, relevanceScore, topic, category: "China / geopolitics" });
+    }
+    if (/(defense|military|missile|security summit|shangri-la|deterrence|navy|army|air force|pentagon|nato)/u.test(title)) {
+      return withNarrative({ ...item, relevanceScore, topic, category: "Defense" });
     }
     if (/(earnings|guidance|revenue|margin|capex|profit|sales)/u.test(title)) {
-      return withNarrative({ ...item, relevanceScore, category: "Earnings / guidance", why: "Earnings revisions and guidance shape leadership, multiples, and sector rotation." });
+      return withNarrative({ ...item, relevanceScore, topic, category: "Earnings / guidance" });
     }
-    return withNarrative({ ...item, relevanceScore, category: "Major company news", why: "Single-name news only matters if it affects sector leadership, index breadth, or earnings revisions." });
+    return withNarrative({ ...item, relevanceScore, topic, category: topic === "Skip" ? "Skip" : topic });
   });
 }
 
 export function filterHighSignalNews(items) {
   return addSourceConfidence(items)
     .map((item) => ({ ...item, relevanceScore: credibilityAdjustedScore(item.relevanceScore, item, item.confirmationCount) }))
-    .filter(isMarketRelevant)
+    .map((item) => {
+      const topic = item.topic || classifyIntelligenceTopic(item);
+      const aiInsight = item.aiInsight || item.marketNarrativeImpact || buildTopicInsight({ ...item, topic });
+      return { ...item, topic, aiInsight, marketNarrativeImpact: aiInsight };
+    })
+    .filter((item) => passesInstitutionalFilter(item) && isMarketRelevant(item))
     .sort((a, b) => b.relevanceScore - a.relevanceScore || String(b.published || "").localeCompare(String(a.published || "")));
 }
 
 export function buildNarrativeImpact(item) {
-  const category = item.category || "Market narrative";
-  if (category === "Fed / rates") return "Can reprice policy expectations, duration risk, liquidity conditions, and the durability of growth-stock rallies.";
-  if (category === "AI / semiconductors") return "Helps confirm or challenge the AI infrastructure spending narrative behind index leadership.";
-  if (category === "Crypto") return "Can reveal whether risk appetite is broadening into speculative assets or fading despite equity strength.";
-  if (category === "China / geopolitics") return "May affect semis, supply chains, dollar demand, commodity risk, and global risk premia.";
-  if (category === "Earnings / guidance") return "Can validate or reject the current earnings narrative and force rotation across peers.";
-  return "Only matters if it changes liquidity, earnings revisions, sector leadership, or index breadth.";
+  return buildTopicInsight(item);
 }
 
 export function scoreNewsItem(item) {
@@ -161,23 +165,25 @@ export function scoreNewsItem(item) {
   if (/(ai capex|artificial intelligence|\bai\b|semiconductor|chip|chips|data center|datacenter|gpu|hbm)/u.test(title)) score += 4;
   if (/(bitcoin|btc|ethereum|eth|crypto|etf flows|etf|stablecoin|stablecoins)/u.test(title)) score += 3;
   if (/(china|taiwan|geopolitic|war|sanction|oil shock|energy shock|crude|opec)/u.test(title)) score += 3;
+  if (/(defense|military|missile|security summit|shangri-la|deterrence|navy|army|air force|pentagon|nato)/u.test(title)) score += 3;
   if (/(earnings|guidance|revenue|margin|capex|profit|sales|beat|miss)/u.test(title)) score += 3;
 
   if (/(market talk|stocks mixed|set to open|futures edge|morning bid|wrap|recap|settle|settlement)/u.test(title)) score -= 2;
-  if (/(coffee|cocoa|corn|soybean|wheat|livestock|random)/u.test(title)) score -= 3;
-  if (!/(fed|cpi|pce|treasury|yield|rate|inflation|\bai\b|chip|semiconductor|bitcoin|crypto|china|oil|earnings|guidance|revenue|margin|capex|nvda|nvidia|msft|aapl|amzn|googl|meta|tsla|pltr|amd|tsm|mu|avgo|crm|snow|cost|dell)/u.test(title)) score -= 1;
+  if (/(badminton|soccer|football|baseball|tennis|celebrity|viral|coffee|cocoa|corn|soybean|wheat|livestock|random)/u.test(title)) score -= 6;
+  if (!/(fed|cpi|pce|treasury|yield|rate|inflation|\bai\b|chip|semiconductor|bitcoin|crypto|china|defense|military|security|oil|earnings|guidance|revenue|margin|capex|nvda|nvidia|msft|aapl|amzn|googl|meta|tsla|pltr|amd|tsm|mu|avgo|crm|snow|cost|dell)/u.test(title)) score -= 1;
 
   return Math.max(0, Math.min(10, score));
 }
 
 function withNarrative(item) {
-  return { ...item, marketNarrativeImpact: buildNarrativeImpact(item) };
+  return { ...item, marketNarrativeImpact: buildNarrativeImpact(item), aiInsight: buildNarrativeImpact(item) };
 }
 
 function isMarketRelevant(item) {
   const title = item.title.toLowerCase();
+  if (classifyIntelligenceTopic(item) === "Skip") return false;
   if (item.relevanceScore >= 4) return true;
-  if (/(coffee|cocoa|gold|settle|settlement|minor|recap)/u.test(title)) return false;
+  if (/(badminton|sports|celebrity|viral|coffee|cocoa|gold|settle|settlement|minor|recap)/u.test(title)) return false;
   if (/tariff/u.test(title)) return /(china|trade war|inflation|supply chain|semiconductor|autos|market|stocks)/u.test(title);
   return item.relevanceScore >= 2;
 }

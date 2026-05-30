@@ -2,7 +2,7 @@ import { analyzeRegionalItem, analyzeRegionalNews } from "../ai/regionalAnalyzer
 import { safeFetchText } from "../utils/fetch.js";
 import { addSourceConfidence, credibilityAdjustedScore } from "./sourceCredibility.js";
 import { buildUpcomingCatalysts } from "./catalysts.js";
-import { curateDiverseItems } from "./intelligenceCuration.js";
+import { buildTopicInsight, classifyIntelligenceTopic, curateDiverseItems, passesInstitutionalFilter } from "./intelligenceCuration.js";
 import { renderRegionalBrief } from "./intelligenceRenderer.js";
 
 const REGION_CONFIG = {
@@ -140,6 +140,7 @@ function finalRegionalScore(item) {
 function passesEditorFilter(item) {
   const text = `${item.title || ""} ${item.summary || ""}`.toLowerCase();
   if (item.signalScore < 6) return false;
+  if (!passesInstitutionalFilter(item)) return false;
   if (INSTANT_SKIP_RE.test(text)) return false;
   if (COMMENTARY_RE.test(text)) return false;
   if (/(morning bid|market talk|stocks mixed|wrap|recap|explainer|what to know)/iu.test(text) && item.signalScore < 8) return false;
@@ -149,13 +150,15 @@ function passesEditorFilter(item) {
 function enrichRegionalItem(item, region) {
   const signalScore = scoreRegionalNewsItem(item, region);
   const category = inferCategory(item);
+  const topic = classifyIntelligenceTopic({ ...item, category });
   return {
     ...item,
     signalScore,
     signal: signalScore,
     category,
-    theme: category,
-    aiInsight: aiInsight(category, item),
+    topic,
+    theme: topic,
+    aiInsight: buildTopicInsight({ ...item, category, topic }) || aiInsight(category, item),
   };
 }
 

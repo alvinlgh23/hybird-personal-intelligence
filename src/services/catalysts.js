@@ -13,6 +13,8 @@ const REGION_RE = {
 export function buildUpcomingCatalysts({ earnings, headlines = [], regionKey = "", includeFallback = false, sourceAvailable = true, env = process.env } = {}) {
   const today = [];
   const week = [];
+  const hasConfiguredSource = Boolean(env.CATALYSTS_JSON);
+  const hasEarningsSource = hasConfiguredEarningsSource(earnings);
 
   addEarningsCatalysts(today, week, earnings);
   addHeadlineCatalysts(today, week, headlines, regionKey);
@@ -23,7 +25,7 @@ export function buildUpcomingCatalysts({ earnings, headlines = [], regionKey = "
     today: unique(today).slice(0, 4),
     week: unique(week).slice(0, 6),
     includeFallback,
-    sourceUnavailable: !sourceAvailable && !hasItems,
+    sourceUnavailable: !hasItems && (!sourceAvailable || (!hasConfiguredSource && !hasEarningsSource)),
   };
 }
 
@@ -40,6 +42,11 @@ function addEarningsCatalysts(today, week, earnings) {
     if (isToday(item.earningsDate)) today.push(`${item.ticker} earnings`);
     else if (isWithinWeek(item.earningsDate)) week.push(`${item.ticker} earnings`);
   }
+}
+
+function hasConfiguredEarningsSource(earnings) {
+  const value = earnings?.value || earnings || {};
+  return Boolean(value.providerStatus?.calendarActive && value.providerStatus.calendarActive !== "unavailable");
 }
 
 function addHeadlineCatalysts(today, week, headlines, regionKey) {
