@@ -2,6 +2,7 @@ import { analyzeRegionalItem, analyzeRegionalNews } from "../ai/regionalAnalyzer
 import { safeFetchText } from "../utils/fetch.js";
 import { addSourceConfidence, credibilityAdjustedScore } from "./sourceCredibility.js";
 import { buildUpcomingCatalysts } from "./catalysts.js";
+import { curateDiverseItems } from "./intelligenceCuration.js";
 import { renderRegionalBrief } from "./intelligenceRenderer.js";
 
 const REGION_CONFIG = {
@@ -79,8 +80,8 @@ export async function buildRegionalNewsBrief(command, { env, limit = 3, deep = f
     return analyzeRegionalItem(region, item, { env, index: itemIndex });
   }
 
-  const selected = ranked.slice(0, Math.min(deep ? 10 : synth ? 5 : limit, 10));
-  const catalysts = buildUpcomingCatalysts({ headlines: selected, regionKey: key, includeFallback: true });
+  const selected = curateDiverseItems(ranked, { limit: Math.min(deep ? 10 : synth ? 5 : limit, 10) });
+  const catalysts = buildUpcomingCatalysts({ headlines: selected, regionKey: key, includeFallback: true, sourceAvailable: rawItems.length > 0, env });
   if (!selected.length) {
     return renderRegionalBrief(region, [], {
       title: `${region.name} News Intelligence Brief`,
@@ -153,6 +154,7 @@ function enrichRegionalItem(item, region) {
     signalScore,
     signal: signalScore,
     category,
+    theme: category,
     aiInsight: aiInsight(category, item),
   };
 }

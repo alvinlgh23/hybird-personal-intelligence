@@ -43,6 +43,9 @@ function renderCatalysts(catalysts) {
   const lines = ["📅 Upcoming Catalysts"];
   if (today.length) lines.push("", "Today", ...today.map((item) => `* ${item}`));
   if (week.length) lines.push("", "This Week", ...week.map((item) => `* ${item}`));
-  if (!today.length && !week.length) lines.push("", "This Week", "* No high-impact scheduled catalysts from configured feeds");
+  if (!today.length && !week.length) {
+    if (catalysts.sourceUnavailable) lines.push("", "Catalyst feed unavailable");
+    else lines.push("", "This Week", "* No high-impact scheduled catalysts from configured feeds");
+  }
   return lines.join("\n");
 }

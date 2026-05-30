@@ -7,6 +7,7 @@ import { listUnreadEmails } from "./gmail.js";
 import { fetchYahooQuote, getMarketSnapshot, getQuotes, inferMarketRegime } from "./marketData.js";
 import { getMarketMovingHeadlines } from "./news.js";
 import { renderMorningBrief } from "./intelligenceRenderer.js";
+import { curateDiverseItems, inferNarrativeTheme } from "./intelligenceCuration.js";
 import { runValuation, valuationAvailable } from "./valuation.js";
 import { buildWatchlistBrief } from "./watchlist.js";
 
@@ -15,7 +16,7 @@ const FOCUS_TICKERS = ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META", "TSLA", 
 
 export async function buildMorningDigest({ env }) {
   const context = await loadMorningContext(env, { includeModel: false });
-  return buildMorningTerminal(context);
+  return buildMorningTerminal(context, env);
 }
 
 export async function buildDeepBrief({ env }) {
@@ -162,13 +163,29 @@ async function getModelOutput(env, structure) {
   }));
 }
 
-function buildMorningTerminal(context) {
+function buildMorningTerminal(context, env) {
   return renderMorningBrief({
     date: compactDate(),
     headlines: rankMorningHeadlines(context),
     marketPulse: marketPulseLines(context),
-    catalysts: buildUpcomingCatalysts({ earnings: context.earnings, headlines: context.headlines, includeFallback: true }),
+    catalysts: buildUpcomingCatalysts({
+      earnings: context.earnings,
+      headlines: context.headlines,
+      includeFallback: true,
+      sourceAvailable: catalystSourceAvailable(context),
+      env,
+    }),
   });
+}
+
+function catalystSourceAvailable(context) {
+  const status = context.earnings.value?.providerStatus;
+  return Boolean(
+      (context.headlines || []).length ||
+      (context.earnings.value?.reportingToday || []).length ||
+      (context.earnings.value?.upcoming || []).length ||
+      (status?.calendarActive && status.calendarActive !== "unavailable"),
+  );
 }
 
 function rankMorningHeadlines(context) {
@@ -176,6 +193,9 @@ function rankMorningHeadlines(context) {
     title: cleanHeadline(item.title),
     source: sourceLabel(item),
     aiInsight: morningHeadlineInsight(item),
+    theme: inferNarrativeTheme(item),
+    published: item.published,
+    sourceTier: item.sourceTier,
     priority: clampPriority(item.relevanceScore || 6),
   }));
 
@@ -186,11 +206,9 @@ function rankMorningHeadlines(context) {
     earningsHeadline(context),
   ].filter(Boolean);
 
-  return dedupeSignals([...realHeadlines, ...marketHeadlines])
+  return curateDiverseItems(dedupeSignals([...realHeadlines, ...marketHeadlines])
     .filter((item) => item.priority >= 6)
-    .sort((a, b) => b.priority - a.priority)
-    .concat(fallbackHeadlines())
-    .slice(0, 4);
+    .concat(fallbackHeadlines()), { limit: 4 });
 }
 
 function liquidityHeadline(context) {
@@ -200,9 +218,12 @@ function liquidityHeadline(context) {
   if (!Number.isFinite(dxy?.changePct) && !Number.isFinite(us10y?.changePct)) return null;
   const easing = (dxy?.changePct || 0) < -0.15 || (us10y?.changePct || 0) < -0.15;
   const tightening = (dxy?.changePct || 0) > 0.15 || (us10y?.changePct || 0) > 0.15;
+  const dxyText = `DXY ${shortPct(dxy?.changePct)}`;
+  const yieldText = `US10Y ${Number.isFinite(us10y?.price) ? `${us10y.price.toFixed(2)}%` : shortPct(us10y?.changePct)}`;
   return {
-    title: easing ? "Treasury yields and dollar pressure are easing" : tightening ? "Dollar/yield pressure is firming again" : "Dollar and yield signals are mixed",
+    title: easing ? `${dxyText}; ${yieldText} as liquidity pressure eases` : tightening ? `${dxyText}; ${yieldText} as dollar/yield pressure firms` : `${dxyText}; ${yieldText} leaves liquidity signal mixed`,
     source: "Market data",
+    theme: "Liquidity / rates",
     aiInsight: easing
       ? "Liquidity conditions still support growth and AI-heavy positioning if breadth holds."
       : tightening
@@ -219,8 +240,9 @@ function aiInfrastructureHeadline(context) {
   const strong = (semis?.changePct || 0) > 0.5 || (nasdaq?.changePct || 0) > 0.5;
   const weak = (semis?.changePct || 0) < -0.5;
   return {
-    title: weak ? "Semis are not confirming AI risk appetite" : strong ? "AI-linked equities remain resilient" : "AI leadership needs confirmation",
+    title: `Semis ${shortPct(semis?.changePct)} versus Nasdaq ${shortPct(nasdaq?.changePct)}`,
     source: "Semis / Nasdaq market structure",
+    theme: "AI / semis",
     aiInsight: weak
       ? "If chips lag while indexes hold, leadership quality is weakening under the surface."
       : strong
@@ -237,8 +259,9 @@ function cryptoHeadline(context) {
   const weak = (btc?.changePct || 0) < -1 || (eth?.changePct || 0) < -1;
   const strong = (btc?.changePct || 0) > 1 || (eth?.changePct || 0) > 1;
   return {
-    title: weak ? "Crypto still lags broader equity enthusiasm" : strong ? "Crypto is confirming speculative risk appetite" : "Crypto is not giving a strong directional read",
+    title: `BTC ${shortPct(btc?.changePct)} and ETH ${shortPct(eth?.changePct)} set the crypto read`,
     source: "BTC / ETH market structure",
+    theme: "Crypto",
     aiInsight: weak
       ? "Risk appetite remains selective rather than fully broad-based."
       : strong
@@ -256,6 +279,7 @@ function earningsHeadline(context) {
   return {
     title: `${item.ticker} keeps earnings risk on today's tape`,
     source: "Earnings calendar",
+    theme: "Earnings",
     aiInsight: "Guidance quality matters more than the headline print, especially around AI capex, margins, and forward demand.",
     priority: today.length ? 7 : 6,
   };

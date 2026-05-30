@@ -10,17 +10,20 @@ const REGION_RE = {
   asean: /(asean|southeast asia|singapore|indonesia|malaysia|thailand|vietnam|philippines|shangri-la)/iu,
 };
 
-export function buildUpcomingCatalysts({ earnings, headlines = [], regionKey = "", includeFallback = false } = {}) {
+export function buildUpcomingCatalysts({ earnings, headlines = [], regionKey = "", includeFallback = false, sourceAvailable = true, env = process.env } = {}) {
   const today = [];
   const week = [];
 
   addEarningsCatalysts(today, week, earnings);
   addHeadlineCatalysts(today, week, headlines, regionKey);
+  addConfiguredCatalysts(today, week, { env, regionKey });
 
+  const hasItems = today.length > 0 || week.length > 0;
   return {
     today: unique(today).slice(0, 4),
     week: unique(week).slice(0, 6),
     includeFallback,
+    sourceUnavailable: !sourceAvailable && !hasItems,
   };
 }
 
@@ -48,6 +51,27 @@ function addHeadlineCatalysts(today, week, headlines, regionKey) {
     const label = catalystLabel(title);
     if (/\btoday\b|this morning|tonight/iu.test(title)) today.push(label);
     else week.push(label);
+  }
+}
+
+function addConfiguredCatalysts(today, week, { env, regionKey }) {
+  const rows = parseConfiguredCatalysts(env.CATALYSTS_JSON);
+  for (const row of rows) {
+    const label = catalystLabel(row.label || row.title || row.name || "");
+    if (!label) continue;
+    if (row.region && regionKey && !String(row.region).toLowerCase().split(/[,|\s]+/u).includes(regionKey)) continue;
+    if (row.bucket === "today" || isToday(row.date)) today.push(label);
+    else if (row.bucket === "week" || isWithinWeek(row.date)) week.push(label);
+  }
+}
+
+function parseConfiguredCatalysts(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
 }
 
