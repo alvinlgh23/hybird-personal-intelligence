@@ -108,6 +108,9 @@ TIMEZONE=America/New_York
 
 NEWS_RSS_FEEDS=
 CATALYSTS_JSON=
+ECONOMIC_CALENDAR_JSON=
+MACRO_CALENDAR_JSON=
+MORNING_HISTORY_PATH=.cache/morning-history.json
 WATCHLIST=NVDA,MSFT,AAPL,AMZN,GOOGL,META,TSLA,PLTR,MU,TSM,AMD,AVGO,CRM,SNOW,COST,DELL
 
 MODEL_RUNNER_MODE=cloud
@@ -423,11 +426,12 @@ Optional:
 - `OPENAI_MODEL`
 - `FMP_API_KEY` for structured earnings calendar and estimates
 - `ALPHA_VANTAGE_API_KEY` for historical reported EPS fallback
-- `CATALYSTS_JSON` for manually configured high-impact calendar items when public feeds do not expose them
+- `CATALYSTS_JSON`, `ECONOMIC_CALENDAR_JSON`, or `MACRO_CALENDAR_JSON` for manually configured high-impact calendar items when public feeds do not expose them
+- `MORNING_HISTORY_PATH` for local narrative-repeat suppression history
 - `GMAIL_TOKEN_JSON` for Gmail in Railway
 - `MODEL_RUNNER_MODE=cloud` and `VALUATION_MODEL_PATH=models/valuation/runner.py` for `/deepbrief` model intelligence
 
-`CATALYSTS_JSON` format:
+Catalyst calendar JSON format:
 
 ```json
 [
@@ -448,6 +452,8 @@ GEMINI_MODEL=gemini-2.5-flash
 OPENAI_API_KEY=
 OPENAI_MODEL=
 CATALYSTS_JSON=
+ECONOMIC_CALENDAR_JSON=
+MACRO_CALENDAR_JSON=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://localhost:3000/oauth2callback

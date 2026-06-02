@@ -4,11 +4,11 @@ export function renderRegionalBrief(region, items, { limit = 3, title, catalysts
   return [title || `${region.flag || ""} ${region.name.toUpperCase()} BRIEF`.trim(), ...body, renderCatalysts(catalysts)].filter(Boolean).join("\n\n");
 }
 
-export function renderMorningBrief({ date, headlines = [], signals = [], marketPulse = [], catalysts = null, lowSignal = false }) {
+export function renderMorningBrief({ date, headlines = [], signals = [], marketPulse = [], catalysts = null, quietSession = false, lowSignal = false }) {
   const title = `🌍 Morning Headlines — ${date}`;
   const items = headlines.length ? headlines : signals;
   const signalLines = items.slice(0, 4).map((item, index) => renderSignal({ ...item, rank: index + 1 }));
-  const lowSignalLine = lowSignal ? "⚠ Low-Signal Overnight Session" : "";
+  const lowSignalLine = quietSession || lowSignal ? "⚠ Quiet Overnight Session" : "";
   const pulse = marketPulse.length ? ["📊 Market Pulse", ...marketPulse].join("\n") : "";
   return [title, lowSignalLine, ...withSeparators(signalLines), pulse, renderCatalysts(catalysts)].filter(Boolean).join("\n\n");
 }
@@ -46,7 +46,7 @@ function renderCatalysts(catalysts) {
   if (week.length) lines.push("", "This Week", ...week.map((item) => `* ${item}`));
   if (!today.length && !week.length) {
     if (catalysts.sourceUnavailable) lines.push("", "⚠ Catalyst feed unavailable");
-    else lines.push("", "This Week", "* No high-impact scheduled catalysts from configured feeds");
+    else return "";
   }
   return lines.join("\n");
 }

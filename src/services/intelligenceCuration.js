@@ -52,6 +52,38 @@ export function buildTopicInsight(item = {}) {
   return "";
 }
 
+export function scoreEventImportance(item = {}) {
+  const topic = item.topic || classifyIntelligenceTopic(item);
+  if (topic === "Skip") return 0;
+  const text = itemText(item).toLowerCase();
+  let score = Number(item.importanceScore ?? item.relevanceScore ?? item.signalScore ?? 6);
+
+  if (/(fomc|fed signals|fed decision|federal reserve|powell|(^|\b)(us|u\.s\.)?\s*cpi\b|nvidia earnings|nvda earnings|major war escalation|invasion|missile strike|major ai model|openai launches|anthropic launches|google launches|china.*policy|u\.s\..*policy|us.*policy|export control)/iu.test(text)) score = Math.max(score, 10);
+  if (/(openai|anthropic|google ai|deepseek|semiconductor export|chip export|central bank decision|ecb cuts|ecb raises|boj decision|mas statement|defense summit|shangri-la|opec decision)/iu.test(text)) score = Math.max(score, 9);
+  if (/(earnings|guidance|regulation|regulatory|antitrust|sanction|tariff|war|defense|geopolitic|oil shock|energy shock|semiconductor|chip)/iu.test(text)) score = Math.max(score, 8);
+  if (/(korea cpi|regional macro|policy|election|minister|parliament|pmi|gdp)/iu.test(text)) score = Math.max(score, 7);
+  if (/(cpi|pce|ppi|jobs report|payroll|ism|central bank|rates?)/iu.test(text)) score = Math.max(score, 6);
+  if (/\bkorea cpi\b/iu.test(text)) score = Math.min(score, 6);
+
+  if (/^(opinion|commentary|column|editorial|op-ed|view|perspective)\b/iu.test(text)) score -= 2;
+  return Math.max(0, Math.min(10, Math.round(score)));
+}
+
+export function narrativeKey(item = {}) {
+  const text = String(item.title || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/gu, " ")
+    .split(/\s+/u)
+    .filter((token) => token.length > 2 && !STOP_WORDS.has(token))
+    .slice(0, 8)
+    .join(" ");
+  return `${item.topic || classifyIntelligenceTopic(item)}:${text}`;
+}
+
+export function hasNewDevelopmentLanguage(item = {}) {
+  return /\b(new|expands?|launches?|announces?|unveils?|approves?|passes?|cuts?|raises?|strikes?|signs?|reports?|beats?|misses?|warns?|escalates?|sanctions?|orders?|halts?|resumes?)\b/iu.test(String(item.title || ""));
+}
+
 export function curateDiverseItems(items = [], { limit = 4, maxSameTheme = MAX_SAME_THEME } = {}) {
   const sorted = items
     .filter(Boolean)
@@ -70,6 +102,8 @@ export function curateDiverseItems(items = [], { limit = 4, maxSameTheme = MAX_S
   }
   return selected;
 }
+
+const STOP_WORDS = new Set(["the", "and", "for", "with", "from", "that", "this", "are", "was", "will", "amid", "over", "after", "before", "says", "said", "into", "its", "new"]);
 
 function aiInsight(title) {
   if (/export|sanction|china|taiwan|japan|korea/iu.test(title)) return "Suggests AI compute controls and supply-chain routing remain active policy pressure points.";

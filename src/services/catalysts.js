@@ -13,12 +13,13 @@ const REGION_RE = {
 export function buildUpcomingCatalysts({ earnings, headlines = [], regionKey = "", includeFallback = false, sourceAvailable = true, env = process.env } = {}) {
   const today = [];
   const week = [];
-  const hasConfiguredSource = Boolean(env.CATALYSTS_JSON);
+  const configuredRows = configuredCatalystRows(env);
+  const hasConfiguredSource = configuredRows.length > 0;
   const hasEarningsSource = hasConfiguredEarningsSource(earnings);
 
   addEarningsCatalysts(today, week, earnings);
   addHeadlineCatalysts(today, week, headlines, regionKey);
-  addConfiguredCatalysts(today, week, { env, regionKey });
+  addConfiguredCatalysts(today, week, { rows: configuredRows, regionKey });
 
   const hasItems = today.length > 0 || week.length > 0;
   return {
@@ -61,8 +62,7 @@ function addHeadlineCatalysts(today, week, headlines, regionKey) {
   }
 }
 
-function addConfiguredCatalysts(today, week, { env, regionKey }) {
-  const rows = parseConfiguredCatalysts(env.CATALYSTS_JSON);
+function addConfiguredCatalysts(today, week, { rows, regionKey }) {
   for (const row of rows) {
     const label = catalystLabel(row.label || row.title || row.name || "");
     if (!label) continue;
@@ -70,6 +70,14 @@ function addConfiguredCatalysts(today, week, { env, regionKey }) {
     if (row.bucket === "today" || isToday(row.date)) today.push(label);
     else if (row.bucket === "week" || isWithinWeek(row.date)) week.push(label);
   }
+}
+
+function configuredCatalystRows(env) {
+  return [
+    ...parseConfiguredCatalysts(env.CATALYSTS_JSON),
+    ...parseConfiguredCatalysts(env.ECONOMIC_CALENDAR_JSON),
+    ...parseConfiguredCatalysts(env.MACRO_CALENDAR_JSON),
+  ];
 }
 
 function parseConfiguredCatalysts(value) {

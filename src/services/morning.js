@@ -1,4 +1,6 @@
 import { generateDeepBrief } from "../ai/router.js";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { formatPct, formatValue } from "../utils/format.js";
 import { buildEmailDigest } from "./emailDigest.js";
 import { getEarningsOverview, formatEarningsOverview } from "./earnings.js";
@@ -7,13 +9,13 @@ import { listUnreadEmails } from "./gmail.js";
 import { fetchYahooQuote, getMarketSnapshot, getQuotes, inferMarketRegime } from "./marketData.js";
 import { getMarketMovingHeadlines } from "./news.js";
 import { renderMorningBrief } from "./intelligenceRenderer.js";
-import { buildTopicInsight, classifyIntelligenceTopic, curateDiverseItems } from "./intelligenceCuration.js";
+import { buildTopicInsight, classifyIntelligenceTopic, curateDiverseItems, hasNewDevelopmentLanguage, narrativeKey, scoreEventImportance } from "./intelligenceCuration.js";
 import { runValuation, valuationAvailable } from "./valuation.js";
 import { buildWatchlistBrief } from "./watchlist.js";
 
 const CLOUD_GMAIL_MESSAGE = "Gmail not connected in cloud. Run /gmail_auth or configure GMAIL_TOKEN_JSON.";
 const FOCUS_TICKERS = ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META", "TSLA", "PLTR", "MU", "TSM", "AMD", "AVGO", "CRM", "SNOW", "COST", "DELL"];
-const MIN_REAL_HEADLINES = 3;
+const QUIET_IMPORTANCE_THRESHOLD = 12;
 
 export async function buildMorningDigest({ env }) {
   const context = await loadMorningContext(env, { includeModel: false });
@@ -164,12 +166,15 @@ async function getModelOutput(env, structure) {
   }));
 }
 
-function buildMorningTerminal(context, env) {
-  const headlines = rankMorningHeadlines(context);
+async function buildMorningTerminal(context, env) {
+  const history = await loadMorningHistory(env);
+  const headlines = rankMorningHeadlines(context, history);
+  await saveMorningHistory(env, history, headlines);
+  const totalImportance = headlines.reduce((sum, item) => sum + (item.importanceScore || 0), 0);
   return renderMorningBrief({
     date: compactDate(),
     headlines,
-    lowSignal: headlines.length < MIN_REAL_HEADLINES,
+    quietSession: isQuietSession(headlines, totalImportance),
     marketPulse: marketPulseLines(context),
     catalysts: buildUpcomingCatalysts({
       earnings: context.earnings,
@@ -181,6 +186,10 @@ function buildMorningTerminal(context, env) {
   });
 }
 
+export function isQuietSession(headlines, totalImportance) {
+  return totalImportance < QUIET_IMPORTANCE_THRESHOLD && !headlines.some((item) => item.importanceScore >= 9);
+}
+
 function catalystSourceAvailable(context) {
   const status = context.earnings.value?.providerStatus;
   return Boolean(
@@ -190,7 +199,7 @@ function catalystSourceAvailable(context) {
   );
 }
 
-function rankMorningHeadlines(context) {
+export function rankMorningHeadlines(context, history = {}) {
   const realHeadlines = (context.headlines || []).slice(0, 12).map((item) => ({
     title: cleanHeadline(item.title),
     source: sourceLabel(item),
@@ -198,16 +207,56 @@ function rankMorningHeadlines(context) {
     aiInsight: buildTopicInsight(item),
     published: item.published,
     sourceTier: item.sourceTier,
-    priority: clampPriority(item.relevanceScore || 6),
     isRealNews: true,
-  }));
+  })).map((item) => applyRepeatPenalty({ ...item, importanceScore: scoreEventImportance(item) }, history));
 
   return curateDiverseItems(
     dedupeSignals(realHeadlines)
       .filter((item) => item.isRealNews)
-      .filter((item) => item.priority >= 6),
+      .filter((item) => item.importanceScore >= 6)
+      .map((item) => ({ ...item, priority: item.importanceScore })),
     { limit: 4 },
   );
+}
+
+function applyRepeatPenalty(item, history) {
+  const key = narrativeKey(item);
+  const entry = history[key];
+  if (!entry) return { ...item, narrativeKey: key };
+  const count = Number(entry.count || 0);
+  if (count >= 2 && !hasNewDevelopmentLanguage(item)) return { ...item, narrativeKey: key, importanceScore: 0 };
+  if (count >= 1 && !hasNewDevelopmentLanguage(item)) return { ...item, narrativeKey: key, importanceScore: Math.max(0, item.importanceScore - 3) };
+  return { ...item, narrativeKey: key };
+}
+
+async function loadMorningHistory(env) {
+  const path = env.MORNING_HISTORY_PATH || ".cache/morning-history.json";
+  try {
+    return JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+async function saveMorningHistory(env, history, headlines) {
+  const path = env.MORNING_HISTORY_PATH || ".cache/morning-history.json";
+  const now = new Date().toISOString();
+  const next = { ...history };
+  for (const item of headlines) {
+    const key = item.narrativeKey || narrativeKey(item);
+    next[key] = { title: item.title, lastSeen: now, count: Number(next[key]?.count || 0) + 1 };
+  }
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify(pruneHistory(next), null, 2));
+  } catch (error) {
+    console.error(`Morning history unavailable: ${safeErrorMessage("history", error)}`);
+  }
+}
+
+function pruneHistory(history) {
+  const cutoff = Date.now() - 14 * 86_400_000;
+  return Object.fromEntries(Object.entries(history).filter(([, value]) => new Date(value.lastSeen || 0).getTime() >= cutoff));
 }
 
 function marketPulseLines(context) {
@@ -234,11 +283,6 @@ function cleanHeadline(value) {
 function sourceLabel(item) {
   const source = item.source || "RSS";
   return item.sourceCategory ? `${source} (${item.sourceCategory})` : source;
-}
-
-function clampPriority(value) {
-  const score = Math.round(Number(value) || 6);
-  return Math.max(6, Math.min(10, score));
 }
 
 function shortPct(value) {
