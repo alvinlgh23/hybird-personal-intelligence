@@ -13,6 +13,7 @@ import { buildWatchlistBrief } from "./watchlist.js";
 
 const CLOUD_GMAIL_MESSAGE = "Gmail not connected in cloud. Run /gmail_auth or configure GMAIL_TOKEN_JSON.";
 const FOCUS_TICKERS = ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META", "TSLA", "PLTR", "MU", "TSM", "AMD", "AVGO", "CRM", "SNOW", "COST", "DELL"];
+const MIN_REAL_HEADLINES = 3;
 
 export async function buildMorningDigest({ env }) {
   const context = await loadMorningContext(env, { includeModel: false });
@@ -164,9 +165,11 @@ async function getModelOutput(env, structure) {
 }
 
 function buildMorningTerminal(context, env) {
+  const headlines = rankMorningHeadlines(context);
   return renderMorningBrief({
     date: compactDate(),
-    headlines: rankMorningHeadlines(context),
+    headlines,
+    lowSignal: headlines.length < MIN_REAL_HEADLINES,
     marketPulse: marketPulseLines(context),
     catalysts: buildUpcomingCatalysts({
       earnings: context.earnings,
@@ -188,7 +191,7 @@ function catalystSourceAvailable(context) {
 }
 
 function rankMorningHeadlines(context) {
-  const realHeadlines = (context.headlines || []).slice(0, 6).map((item) => ({
+  const realHeadlines = (context.headlines || []).slice(0, 12).map((item) => ({
     title: cleanHeadline(item.title),
     source: sourceLabel(item),
     topic: classifyIntelligenceTopic(item),
@@ -196,92 +199,15 @@ function rankMorningHeadlines(context) {
     published: item.published,
     sourceTier: item.sourceTier,
     priority: clampPriority(item.relevanceScore || 6),
+    isRealNews: true,
   }));
 
-  const marketHeadlines = [
-    liquidityHeadline(context),
-    aiInfrastructureHeadline(context),
-    cryptoHeadline(context),
-    earningsHeadline(context),
-  ].filter(Boolean);
-
-  return curateDiverseItems(dedupeSignals([...realHeadlines, ...marketHeadlines])
-    .filter((item) => item.priority >= 6)
-    .concat(fallbackHeadlines()), { limit: 4 });
-}
-
-function liquidityHeadline(context) {
-  if (!context.snapshot) return null;
-  const dxy = context.snapshot.macro.dxy;
-  const us10y = context.snapshot.macro.us10y;
-  if (!Number.isFinite(dxy?.changePct) && !Number.isFinite(us10y?.changePct)) return null;
-  const easing = (dxy?.changePct || 0) < -0.15 || (us10y?.changePct || 0) < -0.15;
-  const tightening = (dxy?.changePct || 0) > 0.15 || (us10y?.changePct || 0) > 0.15;
-  const dxyText = `DXY ${shortPct(dxy?.changePct)}`;
-  const yieldText = `US10Y ${Number.isFinite(us10y?.price) ? `${us10y.price.toFixed(2)}%` : shortPct(us10y?.changePct)}`;
-  return {
-    title: easing ? `${dxyText}; ${yieldText} as liquidity pressure eases` : tightening ? `${dxyText}; ${yieldText} as dollar/yield pressure firms` : `${dxyText}; ${yieldText} leaves liquidity signal mixed`,
-    source: "Market data",
-    topic: "Liquidity",
-    aiInsight: easing
-      ? "The rates/liquidity channel is easing; watch whether duration leadership broadens beyond a few mega-cap names."
-      : tightening
-        ? "Higher yields or dollar strength would tighten financial conditions and pressure duration-sensitive equities."
-        : "The tape needs confirmation from DXY and US10Y before calling liquidity supportive.",
-    priority: tightening || easing ? 8 : 6,
-  };
-}
-
-function aiInfrastructureHeadline(context) {
-  const semis = context.structure.value?.semiconductors;
-  const nasdaq = context.snapshot?.macro?.nasdaq;
-  if (!Number.isFinite(semis?.changePct) && !Number.isFinite(nasdaq?.changePct)) return null;
-  const strong = (semis?.changePct || 0) > 0.5 || (nasdaq?.changePct || 0) > 0.5;
-  const weak = (semis?.changePct || 0) < -0.5;
-  return {
-    title: `Semis ${shortPct(semis?.changePct)} versus Nasdaq ${shortPct(nasdaq?.changePct)}`,
-    source: "Semis / Nasdaq market structure",
-    topic: "Semiconductors",
-    aiInsight: weak
-      ? "If chips lag while indexes hold, leadership quality is weakening under the surface."
-      : strong
-        ? "Chip leadership is still carrying the AI infrastructure trade."
-        : "The tape needs semiconductor confirmation before treating AI leadership as durable.",
-    priority: strong || weak ? 8 : 7,
-  };
-}
-
-function cryptoHeadline(context) {
-  const btc = context.snapshot?.crypto?.btc;
-  const eth = context.snapshot?.crypto?.eth;
-  if (!Number.isFinite(btc?.changePct) && !Number.isFinite(eth?.changePct)) return null;
-  const weak = (btc?.changePct || 0) < -1 || (eth?.changePct || 0) < -1;
-  const strong = (btc?.changePct || 0) > 1 || (eth?.changePct || 0) > 1;
-  return {
-    title: `BTC ${shortPct(btc?.changePct)} and ETH ${shortPct(eth?.changePct)} set the crypto read`,
-    source: "BTC / ETH market structure",
-    topic: "Crypto",
-    aiInsight: weak
-      ? "Speculative liquidity is not confirming the broader equity tape."
-      : strong
-        ? "Speculative liquidity is broadening beyond mega-cap equities."
-        : "Crypto is not giving a strong confirmation signal for risk appetite.",
-    priority: weak || strong ? 7 : 6,
-  };
-}
-
-function earningsHeadline(context) {
-  const today = context.earnings.value?.reportingToday || [];
-  const upcoming = context.earnings.value?.upcoming || [];
-  const item = today[0] || upcoming[0];
-  if (!item?.ticker) return null;
-  return {
-    title: `${item.ticker} keeps earnings risk on today's tape`,
-    source: "Earnings calendar",
-    topic: "Markets",
-    aiInsight: "The desk read is guidance, margins, and forward demand, not the headline EPS print.",
-    priority: today.length ? 7 : 6,
-  };
+  return curateDiverseItems(
+    dedupeSignals(realHeadlines)
+      .filter((item) => item.isRealNews)
+      .filter((item) => item.priority >= 6),
+    { limit: 4 },
+  );
 }
 
 function marketPulseLines(context) {
@@ -329,18 +255,6 @@ function dedupeSignals(signals) {
     seen.add(key);
     return true;
   });
-}
-
-function fallbackHeadlines() {
-  return [
-    {
-      title: "No high-signal overnight headlines from configured feeds",
-      source: "System",
-      topic: "Markets",
-      aiInsight: "Use market pulse as the fallback read until Reuters, WSJ, Nikkei, CNA, or other feeds return fresh items.",
-      priority: 6,
-    },
-  ];
 }
 
 function buildDeepBriefFallback(context) {
