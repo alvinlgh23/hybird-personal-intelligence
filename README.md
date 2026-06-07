@@ -1,6 +1,6 @@
 # Hybrid Financial + Personal Intelligence OS
 
-Telegram AI assistant for Gmail summaries, market intelligence, earnings, macro/crypto signals, watchlists, daily digests, and local-only Codex/Chrome automation.
+Telegram AI assistant for Personal CFO delivery, Gmail summaries, market intelligence, earnings, macro/crypto signals, watchlists, daily digests, and local-only Codex/Chrome automation.
 
 It supports two runtime modes:
 
@@ -23,7 +23,7 @@ Cloud-safe:
 - `/gmail_code <code-or-url>`
 - `/gmail_export_token`
 - `/digest`
-- `/morning` - fast morning dashboard
+- `/morning` - Morning CFO Brief from your Personal CFO Engine snapshot
 - `/deepbrief` - institutional deep research note
 - `/jp` - Japan top 3 signals (`/jp synth`, `/jp 1`, `/jp deep`)
 - `/kr` - Korea top 3 signals (`/kr synth`, `/kr 1`, `/kr deep`)
@@ -111,6 +111,7 @@ CATALYSTS_JSON=
 ECONOMIC_CALENDAR_JSON=
 MACRO_CALENDAR_JSON=
 MORNING_HISTORY_PATH=.cache/morning-history.json
+CFO_SNAPSHOT_PATH=/Users/alvinlim/Desktop/Startup-Insight-AI/investment-portfolio-tracker/data/cfo_snapshot.json
 WATCHLIST=NVDA,MSFT,AAPL,AMZN,GOOGL,META,TSLA,PLTR,MU,TSM,AMD,AVGO,CRM,SNOW,COST,DELL
 
 MODEL_RUNNER_MODE=cloud
@@ -156,6 +157,48 @@ VALUATION_MODEL_PATH=models/valuation/runner.py
 PYTHON_BIN=python3
 VALUATION_TIMEOUT_MS=30000
 ```
+
+## Personal CFO Architecture
+
+The core product is the Personal CFO Engine, not the dashboard or Telegram bot.
+
+```text
+Data sources
+  Banking accounts
+  Broker accounts
+  Crypto accounts
+  CSV imports
+        ↓
+Personal CFO Engine
+  Net worth calculation
+  Cash flow analysis
+  Goal tracking
+  Allocation analysis
+  Risk analysis
+  Recommendation engine
+        ↓
+Output channels
+  Web dashboard
+  Telegram bot
+  Future mobile app
+  Email summary
+```
+
+`/morning` is now a delivery channel for a **Morning CFO Brief**. It reads a local JSON snapshot exported by `investment-portfolio-tracker`:
+
+```text
+/Users/alvinlim/Desktop/Startup-Insight-AI/investment-portfolio-tracker/data/cfo_snapshot.json
+```
+
+Override the path with:
+
+```env
+CFO_SNAPSHOT_PATH=/absolute/path/to/cfo_snapshot.json
+```
+
+If the snapshot does not exist, the bot returns a clearly marked mock fallback. The bot does not store bank credentials, Plaid secrets, or Telegram tokens in code.
+
+Market/news functionality remains available through `/news`, `/market`, `/macro`, `/eth`, and `/deepbrief`.
 
 ## Local Run
 

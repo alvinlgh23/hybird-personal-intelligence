@@ -1,6 +1,7 @@
 import { buildEmailDigest } from "../services/emailDigest.js";
 import { exportGmailToken, getGmailAuthUrl, gmailStatus, listUnreadEmails, saveGmailAuthCode } from "../services/gmail.js";
-import { buildDeepBrief, buildMorningDigest } from "../services/morning.js";
+import { generateMorningCfoBrief } from "../services/cfoMorning.js";
+import { buildDeepBrief } from "../services/morning.js";
 
 export async function handleGmailCommand(text, { env, context }) {
   if (text.startsWith("/gmail_status")) {
@@ -58,8 +59,8 @@ export async function handleGmailCommand(text, { env, context }) {
   }
 
   if (text.startsWith("/morning")) {
-    await context.loading("Building your morning dashboard...");
-    return buildMorningDigest({ env });
+    await context.loading("Building your Morning CFO Brief...");
+    return generateMorningCfoBrief({ env });
   }
 
   if (text.startsWith("/deepbrief")) {

@@ -16,7 +16,7 @@ export function helpText(env) {
     "/gmail_code <code> - finish Gmail OAuth",
     "/gmail_export_token - export token JSON for Railway",
     "/digest - AI Gmail digest",
-    "/morning - fast morning dashboard",
+    "/morning - Morning CFO Brief from your Personal CFO Engine snapshot",
     "/deepbrief - institutional deep research note",
     "",
     "Regional intelligence:",

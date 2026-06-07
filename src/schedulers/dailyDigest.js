@@ -1,4 +1,4 @@
-import { buildMorningDigest } from "../services/morning.js";
+import { generateMorningCfoBrief } from "../services/cfoMorning.js";
 import { getMarketSnapshot } from "../services/marketData.js";
 import { buildMarketSummary } from "../services/marketIntel.js";
 import { currentTimeInZone } from "../utils/time.js";
@@ -25,7 +25,7 @@ export function startDailyDigestScheduler({ env, sendToAllowedUsers, log = conso
     const current = currentTimeInZone(timeZone);
     if (dailyEnabled && current === dailyTime) {
       try {
-        await sendToAllowedUsers(await buildMorningDigest({ env }));
+        await sendToAllowedUsers(await generateMorningCfoBrief({ env }));
       } catch (error) {
         log.error("Daily digest failed:", error.message);
       }
